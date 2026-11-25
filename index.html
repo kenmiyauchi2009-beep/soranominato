@@ -1503,6 +1503,7 @@ function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w
 function draw() {
   if (staticDirty) buildStatic();
   const vw = Math.ceil(cv.width / cam.n), vh = Math.ceil(cv.height / cam.n);
+  if (!vw || !vh) return;   // 起動直後など、画面の大きさがまだ 0 のときは描かない
   if (fr.width !== vw || fr.height !== vh) { fr.width = vw; fr.height = vh; }
   const ox = Math.round(cam.x), oy = Math.round(cam.y), tt = S.t + (speed ? acc / MS_PER_MIN : 0);
   fg.fillStyle = '#4a7838'; fg.fillRect(0, 0, vw, vh);
