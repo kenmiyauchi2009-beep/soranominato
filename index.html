@@ -240,6 +240,7 @@ details.locked .row{opacity:.6}
 <script>
 'use strict';
 // ============ 基本 ============
+const APP_VERSION = '0.7.1';   // sw.js の VERSION と同じ値にする
 const SAVE_KEY = 'soranominato-v1';
 const COLS = 8, TROWS = 6, FLOORS = 2;   // 階：0 = 1階（到着）、1 = 2階（出発）
 const DAY_LEN = 1080;          // 06:00〜24:00（分）
@@ -2237,11 +2238,19 @@ function openMenu() {
     <div class="row"><div class="ic">${ic('note', 'muted')}</div><div class="bd"><b>音を鳴らす</b>iPhone のマナーモード中は鳴りません</div><button class="btn ${SND.on ? '' : 'ghost'}" data-act="snd">${SND.on ? 'オン' : 'オフ'}</button></div>
     <div class="row"><div class="bd"><b>BGM</b><input type="range" min="0" max="100" value="${Math.round(SND.bgm * 100)}" data-vol="bgm" aria-label="BGMの音量"></div></div>
     <div class="row"><div class="bd"><b>効果音</b><input type="range" min="0" max="100" value="${Math.round(SND.sfx * 100)}" data-vol="sfx" aria-label="効果音の音量"></div></div></div>
+    <h3>バージョン</h3><p><b>${APP_VERSION}</b></p><p id="newver" hidden></p>
     <h3>オフライン</h3><p id="offline">確認中…</p>
     <h3>記録</h3><table class="tbl"><tr><td>のべ旅客</td><td>${num(S.totals.pax)}人</td></tr><tr><td>のべ便数</td><td>${num(S.totals.flights)}便</td></tr></table>
     <p>セーブは1時間ごと・建てたとき・アプリを閉じたときに自動で行います。</p>
     <button class="textbtn" data-act="reset">最初からやり直す</button>`);
   offlineStatus().then(([t, c]) => { const el = $('#offline'); if (el) { el.textContent = t; el.className = c; } });
+  readyVersion().then(v => { const el = $('#newver'); if (el && v) { el.textContent = `新しい版 ${v} を受け取りました。アプリを閉じてもう一度開くと切り替わります。`; el.className = 'late'; el.hidden = false; } });
+}
+async function readyVersion() {   // 受け取り済みで、まだ動いていない新しい版
+  try {
+    const v = (await caches.keys()).filter(k => k.startsWith('soranominato-')).map(k => k.slice(13)).pop();
+    return v && v !== APP_VERSION ? v : '';
+  } catch (e) { return ''; }
 }
 async function offlineStatus() {
   if (!('serviceWorker' in navigator)) return ['このブラウザはオフライン起動に対応していません。', 'ng'];
