@@ -8,13 +8,24 @@
 <meta name="apple-mobile-web-app-title" content="そらのみなと">
 <meta name="theme-color" content="#0f1c2b">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-180.png">
 <title>そらのみなと 試作</title>
 <style>
 :root{
   /* 空港の案内サインから取った配色 */
   --l0:#1b2129;            /* 地 */
   --l1:#232b35;            /* 板・行 */
-  --l2:#2b3540;            /* シート */
+  --l2:#2b3540;            /* 自作アイコン（12×12ドットを整数倍で表示） */
+.pi{display:block;width:24px;height:24px;image-rendering:pixelated;flex:none}
+.pi.s{display:inline-block;width:12px;height:12px;vertical-align:-1px}
+.pi.big{width:48px;height:48px}
+.row .ic .pi{margin:0 auto}
+.close .pi{width:18px;height:18px;margin:auto}
+#toast{display:flex;align-items:center;gap:8px}
+#toast .pi{width:24px;height:24px}
+
+/* シート */
   --edge:rgba(255,255,255,.09);
   --edge2:rgba(255,255,255,.16);
   --text:#edf1f5; --muted:#9aa7b4;
@@ -82,7 +93,7 @@ button:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
 .bar{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-radius:12px;overflow:hidden}
 .bar button{height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:var(--meta);font-weight:500;color:var(--muted);gap:2px;position:relative;border-left:1px solid var(--edge)}
 .bar button:first-child{border-left:0}
-.bar button span{font-size:20px;line-height:1}
+.bar button .pi{width:24px;height:24px}
 .bar .dot{position:absolute;top:7px;right:calc(50% - 22px);min-width:8px;height:8px;border-radius:4px;background:var(--sign);display:none}
 .bar .dot.on{display:block}
 @media (orientation:landscape) and (max-height:500px){
@@ -147,6 +158,7 @@ details.locked .row{opacity:.6}
 #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 130px);transform:translateX(-50%);background:var(--l2);
   border:1px solid var(--edge2);padding:8px 14px;border-radius:10px;font-size:var(--small);opacity:0;transition:opacity .25s;pointer-events:none;z-index:20;max-width:90vw;text-align:center}
 #toast.on{opacity:1}
+#toast.top{bottom:auto;top:calc(env(safe-area-inset-top) + 120px)}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
 </style>
 </head>
@@ -171,10 +183,10 @@ details.locked .row{opacity:.6}
 <div class="bottombar">
 <button class="advisor glass" id="advisor"></button>
 <nav class="bar glass">
-  <button data-open="air"><span>✈️</span>航空会社<i class="dot" id="dotAir"></i></button>
-  <button data-open="goal"><span>🎯</span>目標</button>
-  <button data-open="today"><span>📊</span>きょう</button>
-  <button data-open="menu"><span>⚙️</span>設定</button>
+  <button data-open="air"><img class="pi" data-pi="plane" alt="">航空会社<i class="dot" id="dotAir"></i></button>
+  <button data-open="goal"><img class="pi" data-pi="flag" alt="">目標</button>
+  <button data-open="today"><img class="pi" data-pi="chart" alt="">きょう</button>
+  <button data-open="menu"><img class="pi" data-pi="gear" alt="">設定</button>
 </nav>
 </div>
 <div class="sheet hidden" id="sheet"><div class="sheet-inner" id="sheetBody" role="dialog" aria-modal="true"></div></div>
@@ -321,7 +333,7 @@ const MISSIONS = [
   { id: 'sales',  rank: 3, text: '1日のお店の売上 ¥20,000', rw: 10000, chk: () => S.today.shop >= 20000 },
   { id: 'intl',   rank: 4, text: '国際線と契約する', rw: 10000, chk: () => S.contracts.some(c => c.intl) },
   { id: 'duty',   rank: 4, text: '免税店を建てる', rw: 15000, chk: () => cnt('dutyfree') >= 1 },
-  { id: 'rep80',  rank: 4, text: '評判 ★4.0', rw: 20000, chk: () => S.rep >= 80 },
+  { id: 'rep80',  rank: 4, text: '評判 4.0 以上', rw: 20000, chk: () => S.rep >= 80 },
   { id: 'rw4',    rank: 4, text: '第2滑走路をつくる', rw: 40000, chk: () => S.runway >= 4 },
   { id: 'hotel',  rank: 5, text: '空港ホテルを建てる', rw: 30000, chk: () => S.sites.hotel > 0 },
   { id: 'pax20k', rank: 5, text: '1日の旅客 20,000人', rw: 100000, chk: () => S.today.pax >= 20000 },
@@ -599,7 +611,7 @@ function stepMinute() {
 function pushRec(v) { S.rec.push(v); if (S.rec.length > 30) S.rec.shift(); }
 function cancelFlight(f) {
   f.st = 'cancel'; S.today.cancels++; pushRec(0); S.rep = Math.max(0, S.rep - 1.5);
-  toast(`✈️ ${f.name}（${f.dest}）が欠航：${f.why || '遅れ'}`);
+  toast(`${f.name}（${f.dest}）が欠航：${f.why || '遅れ'}`, 'plane');
 }
 function hourly() {
   if (!lowPower) for (let r = 1; r < TROWS; r++) for (let c = 0; c < COLS; c++) {
@@ -637,7 +649,7 @@ function startDay() {
 function checkMissions() {
   for (const m of MISSIONS) {
     if (m.rank > S.rank || S.missions[m.id]) continue;
-    if (m.chk()) { S.missions[m.id] = 1; S.money += m.rw; toast(`🎯 目標達成「${m.text}」 +${yen(m.rw)}`); }
+    if (m.chk()) { S.missions[m.id] = 1; S.money += m.rw; toast(`目標達成「${m.text}」 +${yen(m.rw)}`, 'flag'); }
   }
 }
 
@@ -1508,10 +1520,54 @@ function frame(now) {
   if (running || floats.length) requestDraw(); else lastFrame = 0;
 }
 
+// ============ アイコン（空港の案内サイン風のドット絵。絵文字は使わない） ============
+// # = 色、o = 地の色（くり抜き）、. = 透明。12×12。
+const PICTO = {
+  plane: ['.....##.....', '.....##.....', '....####....', '..########..', '############', '##...##...##', '.....##.....', '.....##.....', '....####....', '...######...', '............', '............'],
+  flag: ['.#..........', '.########...', '.#########..', '.##########.', '.#########..', '.########...', '.#..........', '.#..........', '.#..........', '.#..........', '.#..........', '###.........'],
+  chart: ['............', '.........##.', '.........##.', '.....##..##.', '.....##..##.', '.##..##..##.', '.##..##..##.', '.##..##..##.', '.##..##..##.', '.##..##..##.', '############', '............'],
+  gear: ['.....##.....', '..#.####.#..', '.##########.', '..###..###..', '.###....###.', '####....####', '####....####', '.###....###.', '..###..###..', '.##########.', '..#.####.#..', '.....##.....'],
+  warn: ['.....##.....', '....####....', '....####....', '...##oo##...', '...##oo##...', '..###oo###..', '..###oo###..', '.####oo####.', '.##########.', '#####oo#####', '############', '............'],
+  bag: ['............', '....####....', '....#..#....', '.##########.', '.##########.', '.##o####o##.', '.##o####o##.', '.##o####o##.', '.##o####o##.', '.##########.', '..#......#..', '............'],
+  security: ['############', '#..........#', '#....##....#', '#....##....#', '#...####...#', '#..######..#', '#..#.##.#..#', '#....##....#', '#...#..#...#', '#...#..#...#', '#...#..#...#', '#..........#'],
+  passport: ['.##########.', '.##########.', '.###oooo###.', '.##oo##oo##.', '.##o####o##.', '.##o####o##.', '.##oo##oo##.', '.###oooo###.', '.##########.', '.##########.', '.##ooooo###.', '.##########.'],
+  gate: ['............', '.##########.', '.#........#.', '.#.######.#.', '.#.#....#.#.', '.#.#....#.#.', '.#.#....#.#.', '.#.#..#.#.#.', '.#.#....#.#.', '.#.#....#.#.', '############', '............'],
+  runway: ['............', '............', '############', '#..........#', '#.##.##.##.#', '#..........#', '############', '............', '..##....##..', '..##....##..', '............', '............'],
+  counter: ['....####....', '....####....', '....####....', '...######...', '..########..', '..########..', '............', '############', '############', '.##......##.', '.##......##.', '.##......##.'],
+  seat: ['..##........', '..##........', '..##........', '..##........', '..##........', '..########..', '..########..', '..##....##..', '..##....##..', '..##....##..', '..##....##..', '............'],
+  mail: ['............', '############', '##........##', '#.#......#.#', '#..#....#..#', '#...#..#...#', '#....##....#', '#..........#', '#..........#', '############', '............', '............'],
+  shop: ['....####....', '...#....#...', '...#....#...', '.##########.', '.##########.', '.##########.', '.##########.', '.##########.', '.##########.', '.##########.', '.##########.', '............'],
+  parking: ['############', '#..........#', '#.######...#', '#.##..##...#', '#.##..##...#', '#.######...#', '#.##.......#', '#.##.......#', '#.##.......#', '#.##.......#', '#..........#', '############'],
+  tip: ['....####....', '...######...', '..########..', '..########..', '..########..', '...######...', '....####....', '....####....', '............', '....####....', '....####....', '............'],
+  up: ['.....##.....', '....####....', '...######...', '..########..', '.##########.', '....####....', '....####....', '....####....', '....####....', '....####....', '....####....', '............'],
+  swap: ['.......#....', '.......##...', '.#########..', '.##########.', '.#########..', '.......##...', '...##.......', '..#########.', '.##########.', '..#########.', '...##.......', '............'],
+  build: ['############', '.#.......#..', '.#.......#..', '.#.......#..', '.#......###.', '.#......###.', '.#..........', '.#..........', '.#..........', '.#..........', '.#..........', '####........'],
+  train: ['..########..', '.##########.', '.##oooooo##.', '.##oooooo##.', '.##########.', '.##########.', '.##o####o##.', '.##########.', '..########..', '..#......#..', '.#........#.', '#..........#'],
+  hotel: ['............', '#...........', '#...........', '#.###.......', '#.###.......', '#.##########', '############', '############', '#..........#', '#..........#', '............', '............'],
+  check: ['............', '............', '..........##', '.........##.', '........##..', '.......##...', '##....##....', '.##..##.....', '..####......', '...##.......', '............', '............'],
+  box: ['............', '.##########.', '.#........#.', '.#........#.', '.#........#.', '.#........#.', '.#........#.', '.#........#.', '.#........#.', '.#........#.', '.##########.', '............'],
+  battery: ['............', '............', '##########..', '#........###', '#.######.###', '#.######.###', '#.######.###', '#........###', '##########..', '............', '............', '............'],
+  help: ['...######...', '..########..', '..##....##..', '........##..', '.......###..', '......###...', '.....###....', '.....##.....', '.....##.....', '............', '.....##.....', '.....##.....'],
+  trophy: ['############', '##.######.##', '##.######.##', '.#.######.#.', '..########..', '...######...', '....####....', '.....##.....', '.....##.....', '....####....', '...######...', '...######...'],
+  star: ['.....##.....', '.....##.....', '....####....', '############', '.##########.', '..########..', '...######...', '...######...', '..###..###..', '..##....##..', '.##......##.', '............'],
+  close: ['##........##', '###......###', '.###....###.', '..###..###..', '...######...', '....####....', '....####....', '...######...', '..###..###..', '.###....###.', '###......###', '##........##'],
+};
+const pictoCache = {};
+function pictoURL(name, col = '#ffcd1c', bg = '#1b2129') {
+  const key = name + col + bg;
+  if (pictoCache[key]) return pictoCache[key];
+  const c = document.createElement('canvas'); c.width = 12; c.height = 12;
+  const g = c.getContext('2d');
+  PICTO[name].forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '.') return; g.fillStyle = ch === 'o' ? bg : col; g.fillRect(x, y, 1, 1); }));
+  return (pictoCache[key] = c.toDataURL());
+}
+const ICOL = { sign: '#ffcd1c', text: '#edf1f5', muted: '#9aa7b4', ok: '#5cc98b', late: '#f2a33a', ng: '#f06464', dim: '#4a5562' };
+const ic = (name, col = 'sign', cls = '') => `<img class="pi ${cls}" src="${pictoURL(name, ICOL[col] || col)}" alt="">`;
+
 // ============ HUD ============
 function stars(rep) {
   const s = rep / 20, full = Math.floor(s), half = s - full >= .5 ? 1 : 0;
-  return '★'.repeat(full) + (half ? '★' : '') + `<span class="dim">${'★'.repeat(5 - full - half)}</span>`;
+  return ic('star', 'sign', 's').repeat(full + half) + ic('star', 'dim', 's').repeat(5 - full - half);
 }
 const ST_LABEL = { land: ['着陸', 'ok'], in: ['到着', 'ok'], park: ['搭乗中', 'mute'], ready: ['出発待ち', 'mute'], out: ['出発', 'mute'], tko: ['離陸', 'mute'] };
 function flightStatus(f) {
@@ -1541,34 +1597,34 @@ function advice() {
   const missing = S.contracts.find(c => !hasGateFor(c.size));
   if (missing) {
     const gi = S.gates.findIndex((g, i) => isOpen(i) && g > 0 && g < missing.size && S.rank >= GATE_RANK[missing.size]);
-    return { cls: 'ng', ic: '⛔', text: `${missing.name}の${SIZE_NAME[missing.size]}が止まれません。${GATE_NAME[missing.size]}が必要です`, go: 'ゲートへ', act: () => openGate(gi >= 0 ? gi : Math.max(c0, firstEmptyGate)) };
+    return { cls: 'ng', ic: 'warn', text: `${missing.name}の${SIZE_NAME[missing.size]}が止まれません。${GATE_NAME[missing.size]}が必要です`, go: 'ゲートへ', act: () => openGate(gi >= 0 ? gi : Math.max(c0, firstEmptyGate)) };
   }
   const noCounter = S.contracts.find(c => !canCheckIn(c.name));
-  if (noCounter) return { cls: 'ng', ic: '🧳', text: `${noCounter.name}のお客さんがチェックインできません。カウンターを用意しましょう`, go: '建てる', act: goBuild('land', 'checkin') };
-  if (!C.secCap) return { cls: 'ng', ic: '🛃', text: '保安検査レーンがないので、出発客がゲートへ行けません', go: '建てる', act: goBuild('sec', 'security') };
-  if (!C.bagCap) return { cls: 'ng', ic: '🧳', text: '手荷物受取場がないので、到着客が外へ出られません', go: '建てる', act: goBuild('sec', 'baggage') };
+  if (noCounter) return { cls: 'ng', ic: 'bag', text: `${noCounter.name}のお客さんがチェックインできません。カウンターを用意しましょう`, go: '建てる', act: goBuild('land', 'checkin') };
+  if (!C.secCap) return { cls: 'ng', ic: 'security', text: '保安検査レーンがないので、出発客がゲートへ行けません', go: '建てる', act: goBuild('sec', 'security') };
+  if (!C.bagCap) return { cls: 'ng', ic: 'bag', text: '手荷物受取場がないので、到着客が外へ出られません', go: '建てる', act: goBuild('sec', 'baggage') };
   if (hold.some(f => f.why === 'ゲートが満杯')) {
-    if (firstEmptyGate >= 0) return { cls: 'ng', ic: '🛬', text: 'ゲートが満杯で上空待ちの便があります。ゲートを増やしましょう', go: 'ゲートへ', act: () => openGate(firstEmptyGate) };
-    return { cls: 'ng', ic: '🛬', text: 'ゲートが満杯です。ターミナルを増築するか、路線を減らしましょう', go: S.wings < 2 ? '増築' : '航空会社', act: S.wings < 2 ? openWing : openAir };
+    if (firstEmptyGate >= 0) return { cls: 'ng', ic: 'gate', text: 'ゲートが満杯で上空待ちの便があります。ゲートを増やしましょう', go: 'ゲートへ', act: () => openGate(firstEmptyGate) };
+    return { cls: 'ng', ic: 'gate', text: 'ゲートが満杯です。ターミナルを増築するか、路線を減らしましょう', go: S.wings < 2 ? '増築' : '航空会社', act: S.wings < 2 ? openWing : openAir };
   }
-  if (hold.some(f => f.why === '滑走路の混雑')) return { cls: 'warn', ic: '🛫', text: '滑走路が混んでいます。滑走路を強化しましょう', go: '滑走路', act: openRunway };
+  if (hold.some(f => f.why === '滑走路の混雑')) return { cls: 'warn', ic: 'runway', text: '滑走路が混んでいます。滑走路を強化しましょう', go: '滑走路', act: openRunway };
   const L = S.load;
-  if (L.sec > 1.05) return { cls: 'warn', ic: '🛃', text: '保安検査場に行列ができています。レーンを増やすかレベルを上げましょう', go: '建てる', act: goBuild('sec', 'security') };
-  if (L.ci > 1.05) return { cls: 'warn', ic: '🧾', text: 'チェックインに行列ができています。カウンターか自動チェックイン機を増やしましょう', go: '建てる', act: goBuild('land', 'checkin') };
-  if (L.bag > 1.05) return { cls: 'warn', ic: '🧳', text: '手荷物受取場が混んでいます', go: '建てる', act: goBuild('sec', 'baggage') };
-  if (L.ciq > 1.05) return { cls: 'warn', ic: '🛂', text: '出入国審査に行列ができています', go: '建てる', act: goBuild('sec', 'ciq') };
+  if (L.sec > 1.05) return { cls: 'warn', ic: 'security', text: '保安検査場に行列ができています。レーンを増やすかレベルを上げましょう', go: '建てる', act: goBuild('sec', 'security') };
+  if (L.ci > 1.05) return { cls: 'warn', ic: 'counter', text: 'チェックインに行列ができています。カウンターか自動チェックイン機を増やしましょう', go: '建てる', act: goBuild('land', 'checkin') };
+  if (L.bag > 1.05) return { cls: 'warn', ic: 'bag', text: '手荷物受取場が混んでいます', go: '建てる', act: goBuild('sec', 'baggage') };
+  if (L.ciq > 1.05) return { cls: 'warn', ic: 'passport', text: '出入国審査に行列ができています', go: '建てる', act: goBuild('sec', 'ciq') };
   const p = repParts();
-  if (S.ema.flow > 30 && p.comfort < .6) return { cls: 'warn', ic: '🪑', text: '座る場所が足りません。ベンチやトイレを置きましょう', go: '建てる', act: goBuild('land') };
-  if (S.offers.length && !S.seenOffers) return { cls: 'tip', ic: '✉️', text: `航空会社から契約の話が${S.offers.length}件届いています`, go: '見る', act: openAir };
-  if (!cnt('kiosk')) return { cls: 'tip', ic: '🏪', text: '出発エリアに売店を建てると、搭乗を待つお客さんが買い物をします', go: '建てる', act: goBuild('air', 'kiosk') };
-  if (!S.sites.parking) return { cls: 'tip', ic: '🅿️', text: '駐車場をつくると、車で来るお客さんの駐車料金が入ります', go: '見る', act: () => openSite('parking') };
-  if (S.offers.length && gateLoad() < .5) return { cls: 'tip', ic: '✈️', text: 'ゲートに余裕があります。路線を増やせます', go: '航空会社', act: openAir };
+  if (S.ema.flow > 30 && p.comfort < .6) return { cls: 'warn', ic: 'seat', text: '座る場所が足りません。ベンチやトイレを置きましょう', go: '建てる', act: goBuild('land') };
+  if (S.offers.length && !S.seenOffers) return { cls: 'tip', ic: 'mail', text: `航空会社から契約の話が${S.offers.length}件届いています`, go: '見る', act: openAir };
+  if (!cnt('kiosk')) return { cls: 'tip', ic: 'shop', text: '出発エリアに売店を建てると、搭乗を待つお客さんが買い物をします', go: '建てる', act: goBuild('air', 'kiosk') };
+  if (!S.sites.parking) return { cls: 'tip', ic: 'parking', text: '駐車場をつくると、車で来るお客さんの駐車料金が入ります', go: '見る', act: () => openSite('parking') };
+  if (S.offers.length && gateLoad() < .5) return { cls: 'tip', ic: 'plane', text: 'ゲートに余裕があります。路線を増やせます', go: '航空会社', act: openAir };
   const nx = RANKS[S.rank + 1];
   if (nx) {
     const paxNow = S.last ? Math.round(S.last.pax) : 0;
-    return { cls: '', ic: '🎯', text: `次は「${nx.name}」：1日の旅客 ${num(paxNow)}/${num(nx.pax)}人・評判★${(nx.rep / 20).toFixed(1)}`, go: '目標', act: openGoal };
+    return { cls: '', ic: 'flag', text: `次は「${nx.name}」：1日の旅客 ${num(paxNow)}/${num(nx.pax)}人・評判 ${(nx.rep / 20).toFixed(1)}`, go: '目標', act: openGoal };
   }
-  return { cls: '', ic: '💡', text: '建物をタップするとレベルアップできます', go: '', act: null };
+  return { cls: '', ic: 'tip', text: '建物をタップするとレベルアップできます', go: '', act: null };
 }
 let advKey = '', advAct = null;
 function updateAdvisor() {
@@ -1577,7 +1633,7 @@ function updateAdvisor() {
   if (key === advKey) return; advKey = key;
   const el = $('#advisor');
   el.className = 'advisor glass ' + a.cls;
-  el.innerHTML = `<span aria-hidden="true">${a.ic}</span><span>${a.text}</span>${a.go ? `<span class="go">${a.go}</span>` : ''}`;
+  el.innerHTML = `${ic(a.ic, { ng: 'ng', warn: 'late', tip: 'sign' }[a.cls] || 'muted')}<span>${a.text}</span>${a.go ? `<span class="go">${a.go}</span>` : ''}`;
 }
 let hudKey = '';
 function updateHud() {
@@ -1601,7 +1657,7 @@ const sheet = $('#sheet'), body = $('#sheetBody');
 function sheetOpen() { return !sheet.classList.contains('hidden'); }
 function openSheet(html) { body.innerHTML = html; sheet.classList.remove('hidden'); body.scrollTop = 0; requestDraw(); }
 function closeSheet() { sheet.classList.add('hidden'); sel = null; advKey = ''; updateAdvisor(); requestDraw(); }
-const X = '<button class="close" data-act="close" aria-label="閉じる">✕</button>';
+const X = `<button class="close" data-act="close" aria-label="閉じる">${ic('close', 'muted')}</button>`;
 sheet.addEventListener('click', e => { if (e.target === sheet && !S.dayOver) closeSheet(); });
 body.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
@@ -1692,13 +1748,13 @@ function openBuilding(r, c, b) {
     const names = [...new Set(S.contracts.map(x => x.name))];
     h += `<h3>受け持ちの航空会社</h3><div class="list">` + names.map(n => `<div class="row"><div class="ic"><span style="display:inline-block;width:18px;height:18px;border-radius:4px;background:${airlineColor(n)}"></span></div><div class="bd"><b>${n}</b>${C.airCap[n] ? `専用 ${num(C.airCap[n])}人/時` : '専用カウンターなし'}</div>
       <button class="btn ${b.air === n ? '' : 'ghost'}" data-act="assign" data-v="${n}">${b.air === n ? '担当中' : '担当にする'}</button></div>`).join('') +
-      `<div class="row"><div class="ic">🔁</div><div class="bd"><b>共用</b>どの航空会社の客も受け付ける（賃料なし）</div><button class="btn ${b.air ? 'ghost' : ''}" data-act="assign" data-v="">${b.air ? '共用にする' : '共用中'}</button></div></div>
+      `<div class="row"><div class="ic">${ic('swap', 'muted')}</div><div class="bd"><b>共用</b>どの航空会社の客も受け付ける（賃料なし）</div><button class="btn ${b.air ? 'ghost' : ''}" data-act="assign" data-v="">${b.air ? '共用にする' : '共用中'}</button></div></div>
       <p>専用カウンター1つにつき、航空会社から1日 ${yen(RENT)} の賃料が入ります。</p>`;
   }
   if (lv < 3) {
     const cost = Math.round(f.cost * LV_COST[lv + 1]);
     const gain = f.shop ? `客数×${LV_CAP[lv + 1]}・客単価×${LV_SPEND[lv + 1]}` : f.cap ? `処理 ${f.cap * LV_CAP[lv]}→${Math.round(f.cap * LV_CAP[lv + 1])}人/時` : f.comfort ? `快適さ ${f.comfort * LV_COMFORT[lv]}→${f.comfort * LV_COMFORT[lv + 1]}` : '効果アップ';
-    h += `<h3>レベルアップ</h3><div class="list"><div class="row"><div class="ic">⬆️</div><div class="bd"><b>Lv${lv + 1} にする</b>${gain}・維持費×${LV_UP[lv + 1]}</div>
+    h += `<h3>レベルアップ</h3><div class="list"><div class="row"><div class="ic">${ic('up')}</div><div class="bd"><b>Lv${lv + 1} にする</b>${gain}・維持費×${LV_UP[lv + 1]}</div>
       <button class="btn" data-act="lvup" ${S.money < cost ? 'disabled' : ''}>${yen(cost)}</button></div></div>`;
   } else h += `<p class="ok">最大レベルです</p>`;
   h += `<h3>くわしく</h3><table class="tbl"><tr><td>場所</td><td>${ZONE_NAME[zoneOf(r)]}</td></tr>`;
@@ -1718,7 +1774,7 @@ function openGate(i) {
   if (lv) h += `<div class="stat"><div><small>いま止まっている便</small><b style="font-size:var(--body)">${f ? `${f.name}（${f.dest}）` : 'なし'}</b></div><div><small>1日の維持費</small><b>${yen(GATE_UP[lv])}</b></div></div>`;
   if (nx <= 3) {
     const locked = S.rank < GATE_RANK[nx];
-    h += `<h3>${lv ? '大きくする' : 'つくる'}</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">🛬</div><div class="bd"><b>${GATE_NAME[nx]}</b>${locked ? RANKS[GATE_RANK[nx]].name + 'で解放' : `${SIZE_NAME[nx]}まで・待合室の座席が増える・維持費 ${yen(GATE_UP[nx])}/日`}</div>
+    h += `<h3>${lv ? '大きくする' : 'つくる'}</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">${ic('gate')}</div><div class="bd"><b>${GATE_NAME[nx]}</b>${locked ? RANKS[GATE_RANK[nx]].name + 'で解放' : `${SIZE_NAME[nx]}まで・待合室の座席が増える・維持費 ${yen(GATE_UP[nx])}/日`}</div>
       <button class="btn price" data-act="gate" data-v="${i}" ${locked || S.money < GATE_COST[nx] ? 'disabled' : ''}>${yen(GATE_COST[nx])}</button></div></div>`;
   } else h += `<p class="ok">いちばん大きなゲートです</p>`;
   openSheet(h);
@@ -1731,7 +1787,7 @@ function openRunway() {
     <div class="stat"><div><small>1時間に使える回数</small><b>${ev.rwMul ? Math.round(cur.cap * ev.rwMul) : cur.cap}<small>回${ev.rwMul ? '（強風）' : ''}</small></b></div><div><small>契約から見た平均</small><b class="${need > cur.cap * .6 ? 'late' : ''}">${need.toFixed(1)}<small>回</small></b></div></div>`;
   if (nx) {
     const locked = S.rank < nx.rank;
-    h += `<h3>強化する</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">🛫</div><div class="bd"><b>${nx.name}</b>${locked ? RANKS[nx.rank].name + 'で解放' : `${nx.desc}。1時間 ${nx.cap}回・維持費 ${yen(nx.up)}/日`}</div>
+    h += `<h3>強化する</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">${ic('runway')}</div><div class="bd"><b>${nx.name}</b>${locked ? RANKS[nx.rank].name + 'で解放' : `${nx.desc}。1時間 ${nx.cap}回・維持費 ${yen(nx.up)}/日`}</div>
       <button class="btn price" data-act="runway" ${locked || S.money < nx.cost ? 'disabled' : ''}>${yen(nx.cost)}</button></div></div>`;
   } else h += `<p class="ok">最大の滑走路です</p>`;
   openSheet(h);
@@ -1750,9 +1806,9 @@ function openSite(k) {
   const f = FAC[k], lv = S.sites[k], locked = S.rank < f.rank;
   const cost = lv ? Math.round(f.cost * LV_COST[lv + 1]) : f.cost;
   const stage = k === 'parking' ? ['', '平面の駐車場', '2層の立体駐車場', '4層の立体駐車場'] : k === 'hotel' ? ['', '7階建て', '9階建て', '11階建て'] : ['', '高架の駅', '駅（快速が止まる）', '駅（特急が止まる）'];
-  let h = `${X}<div class="top"><div class="big">${{ parking: '🅿️', station: '🚉', hotel: '🏨' }[k]}</div><div><h2>${f.name}${lv ? pips(lv) : ''}</h2><p>${f.desc}</p></div></div>`;
+  let h = `${X}<div class="top"><div class="big">${ic({ parking: 'parking', station: 'train', hotel: 'hotel' }[k], 'sign', 'big')}</div><div><h2>${f.name}${lv ? pips(lv) : ''}</h2><p>${f.desc}</p></div></div>`;
   if (lv) h += `<div class="stat"><div><small>いま</small><b style="font-size:var(--body)">${stage[lv]}</b></div><div><small>1日の維持費</small><b>${yen(f.up * LV_UP[lv])}</b></div></div>`;
-  if (lv < 3) h += `<h3>${lv ? 'レベルアップ' : 'つくる'}</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">${lv ? '⬆️' : '🏗️'}</div><div class="bd"><b>${stage[lv + 1]}</b>${locked ? RANKS[f.rank].name + 'で解放' : f.shop ? `受け入れ ${Math.round(f.shop.cap * LV_CAP[lv + 1])}人/時` : '評判・旅客が増える'}</div>
+  if (lv < 3) h += `<h3>${lv ? 'レベルアップ' : 'つくる'}</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">${ic(lv ? 'up' : 'build')}</div><div class="bd"><b>${stage[lv + 1]}</b>${locked ? RANKS[f.rank].name + 'で解放' : f.shop ? `受け入れ ${Math.round(f.shop.cap * LV_CAP[lv + 1])}人/時` : '評判・旅客が増える'}</div>
     <button class="btn price" data-act="site" data-v="${k}" ${locked || S.money < cost ? 'disabled' : ''}>${yen(cost)}</button></div></div>`;
   else h += `<p class="ok">最大レベルです</p>`;
   openSheet(h);
@@ -1789,16 +1845,16 @@ function openGoal() {
     const paxNow = S.last ? S.last.pax : 0;
     h += `<h3>次のランク：${nx.name}（1日の終わりに判定）</h3><table class="tbl">
       <tr><td>1日の旅客<small>前日の実績</small>${meter(paxNow / nx.pax)}</td><td>${num(paxNow)}<small>／${num(nx.pax)}人</small></td></tr>
-      <tr><td>評判${meter(S.rep / nx.rep)}</td><td>★${(S.rep / 20).toFixed(1)}<small>／★${(nx.rep / 20).toFixed(1)}</small></td></tr>
+      <tr><td>評判${meter(S.rep / nx.rep)}</td><td>${(S.rep / 20).toFixed(1)}<small>／${(nx.rep / 20).toFixed(1)} 以上</small></td></tr>
       ${nx.need ? `<tr><td>${FAC[nx.need].name}がある</td><td>${cnt(nx.need) ? '<span class="ok">あり</span>' : '<span class="ng">なし</span>'}</td></tr>` : ''}</table>`;
   } else h += `<p class="ok">最高ランクに到達しました</p>`;
   h += `<h3>やること</h3><div class="list">`;
   for (const m of MISSIONS) {
     if (m.rank > S.rank) continue;
     const done = S.missions[m.id];
-    h += `<div class="row ${done ? 'off' : ''}"><div class="ic">${done ? '✅' : '◻️'}</div><div class="bd"><b>${m.text}</b></div><span class="${done ? 'muted' : 'signc'} num">${yen(m.rw)}</span></div>`;
+    h += `<div class="row ${done ? 'off' : ''}"><div class="ic">${done ? ic('check', 'ok') : ic('box', 'muted')}</div><div class="bd"><b>${m.text}</b></div><span class="${done ? 'muted' : 'signc'} num">${yen(m.rw)}</span></div>`;
   }
-  h += `</div><h3>評判の内わけ（目標 ★${(repTarget() / 20).toFixed(1)} に向かってゆっくり動きます）</h3><table class="tbl">
+  h += `</div><h3>評判の内わけ（目標 ${(repTarget() / 20).toFixed(1)} に向かってゆっくり動きます）</h3><table class="tbl">
     <tr><td>定時運航<small>遅れ・欠航で下がる</small>${meter(p.ontime)}</td><td>${pct(p.ontime)}</td></tr>
     <tr><td>待ち時間<small>チェックイン・保安検査・手荷物受取が足りないと下がる</small>${meter(p.wait)}</td><td>${pct(p.wait)}</td></tr>
     <tr><td>快適さ<small>ベンチ・トイレ・植木など。旅客が多いほど必要</small>${meter(p.comfort)}</td><td>${pct(p.comfort)}</td></tr>
@@ -1829,7 +1885,7 @@ function openToday() {
 function openReport(rankUp) {
   const D = S.today, net = D.fees + D.shop + D.rent - D.upkeep;
   let h = `<h2>${S.day}日目のおわり</h2>`;
-  if (rankUp) h += `<div class="list" style="margin-top:12px"><div class="row"><div class="ic">🎉</div><div class="bd"><b>「${rankUp}」に昇格しました</b>新しい建物・ゲート・路線が使えるようになりました</div></div></div>`;
+  if (rankUp) h += `<div class="list" style="margin-top:12px"><div class="row"><div class="ic">${ic('trophy')}</div><div class="bd"><b>「${rankUp}」に昇格しました</b>新しい建物・ゲート・路線が使えるようになりました</div></div></div>`;
   h += `<div class="stat"><div><small>収支</small><b class="${net >= 0 ? 'ok' : 'ng'}">${net >= 0 ? '+' : ''}${yen(net)}</b></div><div><small>旅客</small><b>${num(D.pax)}<small>人</small></b></div></div>
     <h3>内わけ</h3><table class="tbl">
     <tr><td>着陸料</td><td>+${yen(D.fees)}</td></tr><tr><td>お店・駐車場</td><td>+${yen(D.shop)}</td></tr>
@@ -1837,7 +1893,7 @@ function openReport(rankUp) {
     <tr><td>維持費</td><td class="ng">−${yen(D.upkeep)}</td></tr>
     <tr><td>着陸した便</td><td>${D.flights}便<small>定時 ${D.ontime}</small></td></tr>
     <tr><td>欠航</td><td class="${D.cancels ? 'ng' : ''}">${D.cancels}便</td></tr>
-    <tr><td>評判</td><td>★${(S.rep / 20).toFixed(1)}</td></tr></table>`;
+    <tr><td>評判</td><td>${ic('star', 'sign', 's')} ${(S.rep / 20).toFixed(1)}</td></tr></table>`;
   if (S.nextEvent) h += `<p class="late">あしたの予報：${EVENTS[S.nextEvent].name}（${EVENTS[S.nextEvent].desc}）</p>`;
   h += `<p>航空会社から新しい契約の話が${S.offers.length}件届いています。</p>`;
   h += `<button class="btn wide" data-act="next">${S.day + 1}日目をはじめる</button>`;
@@ -1846,9 +1902,9 @@ function openReport(rankUp) {
 function openMenu() {
   openSheet(`${X}<h2>設定</h2>
     <div class="list" style="margin-top:12px">
-    <div class="row"><div class="ic">🔋</div><div class="bd"><b>省電力モード</b>描画を減らし、売上の数字を出しません</div>
+    <div class="row"><div class="ic">${ic('battery', 'muted')}</div><div class="bd"><b>省電力モード</b>描画を減らし、売上の数字を出しません</div>
       <button class="btn ${lowPower ? '' : 'ghost'}" data-act="power">${lowPower ? 'オン' : 'オフ'}</button></div>
-    <div class="row"><div class="ic">❓</div><div class="bd"><b>遊び方</b></div><button class="btn ghost" data-act="help">見る</button></div></div>
+    <div class="row"><div class="ic">${ic('help', 'muted')}</div><div class="bd"><b>遊び方</b></div><button class="btn ghost" data-act="help">見る</button></div></div>
     <h3>オフライン</h3><p id="offline">確認中…</p>
     <h3>記録</h3><table class="tbl"><tr><td>のべ旅客</td><td>${num(S.totals.pax)}人</td></tr><tr><td>のべ便数</td><td>${num(S.totals.flights)}便</td></tr></table>
     <p>セーブは1時間ごと・建てたとき・アプリを閉じたときに自動で行います。</p>
@@ -1892,8 +1948,8 @@ document.querySelector('.bar').addEventListener('click', e => {
   updateHud();
 });
 let toastTimer = 0;
-function toast(msg) {
-  const el = $('#toast'); el.textContent = msg; el.classList.add('on');
+function toast(msg, icon) {
+  const el = $('#toast'); el.innerHTML = (icon ? ic(icon) : '') + `<span>${msg}</span>`; el.classList.toggle('top', sheetOpen()); el.classList.add('on');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2800);
 }
 document.addEventListener('visibilitychange', () => {
@@ -1906,6 +1962,7 @@ document.querySelector('.zoom').addEventListener('click', e => { const b = e.tar
 window.addEventListener('pagehide', save);
 
 // ============ 起動 ============
+for (const im of document.querySelectorAll('[data-pi]')) im.src = pictoURL(im.dataset.pi, ICOL.muted);
 try { lowPower = localStorage.getItem(SAVE_KEY + '-lp') === '1'; } catch (e) {}
 if (!load()) newGame();
 updateHud(); layout(); requestDraw();

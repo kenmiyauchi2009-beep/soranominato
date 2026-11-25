@@ -1,9 +1,9 @@
 // オフライン用 service worker
 // キャッシュがあればそれを返し、裏で新しい版を取りに行く（次に開いたとき新しい版になる）。
 // ファイルを増やしたら ASSETS に足し、VERSION を上げる。
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const CACHE = 'soranominato-' + VERSION;
-const ASSETS = ['./', 'index.html', 'manifest.webmanifest'];
+const ASSETS = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-180.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
