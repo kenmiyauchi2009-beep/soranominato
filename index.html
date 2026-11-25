@@ -1,0 +1,1216 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="そらのみなと">
+<meta name="theme-color" content="#0f1c2b">
+<link rel="manifest" href="manifest.webmanifest">
+<title>そらのみなと 試作</title>
+<style>
+:root{
+  /* 空港の案内サインから取った配色 */
+  --l0:#1b2129;            /* 地 */
+  --l1:#232b35;            /* 板・行 */
+  --l2:#2b3540;            /* シート */
+  --edge:rgba(255,255,255,.09);
+  --edge2:rgba(255,255,255,.16);
+  --text:#edf1f5; --muted:#9aa7b4;
+  --sign:#ffcd1c;          /* 操作できるもの・お金（唯一のアクセント） */
+  --ink:#1b1600;           /* サイン黄の上の文字 */
+  --ok:#5cc98b; --late:#f2a33a; --ng:#f06464;   /* 定刻・遅れ・欠航 */
+  --meta:.75rem; --small:.875rem; --body:1rem; --h2:1.25rem; --h1:1.5rem;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--l0);color:var(--text);
+  font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;font-weight:400;line-height:1.5;overscroll-behavior:none}
+body{display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:calc(env(safe-area-inset-top) + 8px) 8px calc(env(safe-area-inset-bottom) + 8px);
+  user-select:none;-webkit-user-select:none;touch-action:manipulation;overflow:hidden}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+/* ヘッダー：お金 > 時刻 > 評判 の順に目立たせる */
+.hud{width:100%;max-width:460px;display:flex;flex-direction:column;gap:6px;padding:0 4px}
+.hud-main,.hud-sub{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.money{font-size:var(--h1);font-weight:600;line-height:1.15;color:var(--sign);font-variant-numeric:tabular-nums}
+.money.neg{color:var(--ng)}
+.clock{display:flex;align-items:baseline;gap:8px;font-variant-numeric:tabular-nums}
+.clock span{font-size:var(--small);color:var(--muted)}
+.clock b{font-size:var(--h2);font-weight:500;line-height:1.15}
+.status{display:flex;align-items:baseline;gap:8px;min-width:0;font-size:var(--small);white-space:nowrap;overflow:hidden}
+.rep{color:var(--sign);letter-spacing:1px}
+.rep .dim{color:#4a5562}
+.rank{color:var(--text);font-weight:500}
+.event{color:var(--late)}
+.speed{display:flex;flex:none;border:1px solid var(--edge);border-radius:10px;overflow:hidden;background:var(--l1)}
+.speed button{width:44px;height:36px;font-size:var(--meta);font-weight:500;color:var(--muted);border-left:1px solid var(--edge)}
+.speed button:first-child{border-left:0}
+.speed button.on{background:var(--sign);color:var(--ink)}
+
+/* 発着案内ボード（この画面でいちばん目立つもの） */
+.board{width:100%;max-width:460px;background:#10151b;border:1px solid var(--edge);border-radius:10px;overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.board .hd{display:flex;justify-content:space-between;padding:4px 10px;font-size:var(--meta);color:var(--muted);border-bottom:1px solid var(--edge)}
+.fl{display:grid;grid-template-columns:3.2em 1fr auto;align-items:center;gap:8px;padding:4px 10px;font-size:var(--small);line-height:1.4;border-top:1px solid rgba(255,255,255,.05)}
+.fl:first-of-type{border-top:0}
+.fl time{font-variant-numeric:tabular-nums;color:var(--sign);font-weight:500}
+.fl .who{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fl .who i{font-style:normal;display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:1px}
+.fl .who small{color:var(--muted);font-size:var(--meta);margin-left:6px}
+.chip{font-size:var(--meta);font-weight:500;padding:1px 8px;border-radius:6px;white-space:nowrap;border:1px solid currentColor}
+.chip.ok{color:var(--ok)} .chip.late{color:var(--late)} .chip.ng{color:var(--ng);background:rgba(240,100,100,.12)} .chip.mute{color:var(--muted)}
+.board .empty{padding:8px 10px;font-size:var(--small);color:var(--muted)}
+@media (max-height:700px){ .fl:nth-of-type(n+3){display:none} }
+.hud,.board,#cv,.advisor,.bar{flex:none}
+
+#cv{display:block;border-radius:10px;touch-action:manipulation}
+
+/* アドバイザー：次にやること */
+.advisor{width:100%;max-width:460px;min-height:44px;display:flex;align-items:center;gap:10px;padding:8px 12px;text-align:left;
+  background:var(--l1);border:1px solid var(--edge);border-left:4px solid var(--edge2);border-radius:10px;font-size:var(--small);line-height:1.45}
+.advisor.warn{border-left-color:var(--late)} .advisor.ng{border-left-color:var(--ng)} .advisor.tip{border-left-color:var(--sign)}
+.advisor .go{margin-left:auto;color:var(--sign);font-weight:500;white-space:nowrap}
+
+.bar{width:100%;max-width:460px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:auto}
+.bar button{height:56px;border-radius:12px;background:var(--l1);border:1px solid var(--edge);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:var(--meta);font-weight:500;color:var(--muted);gap:2px;position:relative}
+.bar button span{font-size:20px;line-height:1}
+.bar .dot{position:absolute;top:7px;right:calc(50% - 22px);min-width:8px;height:8px;border-radius:4px;background:var(--sign);display:none}
+.bar .dot.on{display:block}
+
+/* シート */
+.sheet{position:fixed;inset:0;background:rgba(6,9,13,.55);display:flex;align-items:flex-end;justify-content:center;z-index:10}
+.sheet.hidden{display:none}
+.sheet-inner{width:100%;max-width:480px;max-height:78vh;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--l2);
+  border:1px solid var(--edge);border-bottom:0;border-radius:16px 16px 0 0;padding:16px 16px calc(env(safe-area-inset-bottom) + 16px);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.sheet h2{margin:0;font-size:var(--h2);font-weight:600;line-height:1.25}
+.sheet h3{margin:20px 0 8px;font-size:var(--small);color:var(--muted);font-weight:500}
+.sheet p{margin:8px 0 0;font-size:var(--small);line-height:1.55;color:var(--muted)}
+.sheet p.lead{font-size:var(--body);color:var(--text)}
+.top{display:flex;align-items:flex-start;gap:12px}
+.top .big{flex:none;font-size:32px;line-height:1}
+.top > div{flex:1;min-width:0}
+.pips{display:inline-flex;gap:3px;margin-left:8px;vertical-align:2px}
+.pips i{width:8px;height:8px;border-radius:50%;border:1px solid var(--sign)}
+.pips i.on{background:var(--sign)}
+.ok{color:var(--ok)} .ng{color:var(--ng)} .late{color:var(--late)} .muted{color:var(--muted)} .signc{color:var(--sign)}
+
+.list{background:var(--l1);border:1px solid var(--edge);border-radius:12px;overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--edge)}
+.row:first-child{border-top:0}
+.row .ic{font-size:24px;width:32px;text-align:center;flex:none}
+.row .bd{flex:1;min-width:0;font-size:var(--small);line-height:1.45;color:var(--muted)}
+.row .bd b{display:block;font-size:var(--body);font-weight:500;color:var(--text)}
+.row .fx{display:inline-block;margin-top:4px;font-size:var(--meta);font-weight:500;padding:1px 8px;border-radius:6px}
+.row .fx.ok{background:rgba(92,201,139,.14)} .row .fx.ng{background:rgba(240,100,100,.14)}
+.row.off .ic,.row.off b{opacity:.5}
+
+.btn{min-width:76px;height:40px;padding:0 12px;border-radius:10px;background:var(--sign);color:var(--ink);font-weight:500;font-size:var(--small);flex:none;font-variant-numeric:tabular-nums}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--edge2)}
+.btn.price{background:rgba(255,205,28,.08);color:var(--sign);border:1px solid rgba(255,205,28,.45)}
+.btn:disabled{background:transparent;color:var(--muted);border:1px solid var(--edge)}
+.btn.wide{width:100%;height:48px;margin-top:16px;font-size:var(--body)}
+.textbtn{display:block;margin:16px auto 0;padding:10px 16px;color:var(--ng);font-size:var(--small)}
+
+.stat{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+.stat > div{background:var(--l1);border:1px solid var(--edge);border-radius:12px;padding:10px 12px}
+.stat > div > small{display:block;font-size:var(--meta);color:var(--muted)}
+.stat b small{font-size:var(--small);font-weight:400;color:var(--muted);margin-left:2px}
+.stat b{font-size:var(--h2);font-weight:500;font-variant-numeric:tabular-nums}
+.tbl{width:100%;border-collapse:collapse;font-size:var(--small);background:var(--l1);border:1px solid var(--edge);border-radius:12px;overflow:hidden}
+.tbl td{padding:8px 12px;border-top:1px solid var(--edge);vertical-align:top}
+.tbl tr:first-child td{border-top:0}
+.tbl td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.tbl small{display:block;color:var(--muted);font-size:var(--meta)}
+.meter{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:6px}
+.meter i{display:block;height:100%}
+.close{float:right;font-size:20px;color:var(--muted);width:44px;height:44px;margin:-10px -10px 0 8px}
+details.locked{margin-top:12px;font-size:var(--small);color:var(--muted)}
+details.locked summary{padding:10px 0;cursor:pointer}
+details.locked .row{opacity:.6}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 72px);transform:translateX(-50%);background:var(--l2);
+  border:1px solid var(--edge2);padding:8px 14px;border-radius:10px;font-size:var(--small);opacity:0;transition:opacity .25s;pointer-events:none;z-index:20;max-width:90vw;text-align:center}
+#toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<header class="hud">
+  <div class="hud-main">
+    <div class="money" id="money">¥0</div>
+    <div class="clock"><span id="day">1日目</span><b id="time">06:00</b></div>
+  </div>
+  <div class="hud-sub">
+    <div class="status"><span class="rep" id="rep"></span><span class="rank" id="rank"></span><span class="event" id="event"></span></div>
+    <div class="speed" id="speed" role="group" aria-label="時間の速さ">
+      <button data-sp="0" aria-label="一時停止">停止</button><button data-sp="1" class="on" aria-label="等速">×1</button><button data-sp="2" aria-label="2倍速">×2</button><button data-sp="4" aria-label="4倍速">×4</button>
+    </div>
+  </div>
+</header>
+<section class="board" id="board" aria-label="発着案内" aria-live="polite"></section>
+<canvas id="cv" aria-label="空港の地図"></canvas>
+<button class="advisor" id="advisor"></button>
+<nav class="bar">
+  <button data-open="air"><span>✈️</span>航空会社<i class="dot" id="dotAir"></i></button>
+  <button data-open="goal"><span>🎯</span>目標</button>
+  <button data-open="today"><span>📊</span>きょう</button>
+  <button data-open="menu"><span>⚙️</span>設定</button>
+</nav>
+<div class="sheet hidden" id="sheet"><div class="sheet-inner" id="sheetBody" role="dialog" aria-modal="true"></div></div>
+<div id="toast" role="status"></div>
+
+<script>
+'use strict';
+// ============ 基本 ============
+const SAVE_KEY = 'soranominato-v1';
+const COLS = 8, TROWS = 7;
+const DAY_LEN = 1080;          // 06:00〜24:00（分）
+const MS_PER_MIN = 120;        // 等速で 1ゲーム分 = 0.12秒（1日 約2分10秒）
+const $ = s => document.querySelector(s);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const ri = (a, b) => Math.floor(rnd(a, b + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+const yen = n => '¥' + Math.round(n).toLocaleString('ja-JP');
+const num = n => Math.round(n).toLocaleString('ja-JP');
+const hhmm = t => { const m = Math.floor(t) + 360; return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+
+// ============ データ ============
+const SIZE_NAME = ['', '小型機', '中型機', '大型機'];
+const GATE_NAME = ['', 'ゲートS', 'ゲートM', 'ゲートL'];
+const GATE_COST = [0, 500, 2500, 9000];     // そのレベルにする費用
+const GATE_UP = [0, 30, 90, 260];            // 1日の維持費
+const GATE_RANK = [0, 1, 2, 3];
+const TURN = [0, 50, 70, 95];               // 駐機時間（分）
+const PAX = [0, 60, 160, 340];              // 1便の旅客（到着＋出発）
+const FEE = [0, 120, 260, 560];             // 着陸料
+const RUNWAY = [null,
+  { cap: 6,  up: 0,   name: '滑走路 Lv1' },
+  { cap: 10, up: 120, name: '滑走路 Lv2', cost: 4000, rank: 2, desc: '誘導路を増やす' },
+  { cap: 16, up: 400, name: '滑走路 Lv3', cost: 20000, rank: 3, desc: '滑走路を延ばし、計器着陸装置をつける' },
+  { cap: 28, up: 1500, name: '第2滑走路', cost: 90000, rank: 4, desc: '2本目の滑走路。着陸と離陸を分ける' },
+];
+const LAND_COST = [0, 0, 0, 1500, 6000, 18000, 45000]; // その行を買う費用（0〜2行目は最初から）
+const RANKS = [null,
+  { name: '地方空港' },
+  { name: 'にぎわう空港', pax: 700,   rep: 40 },
+  { name: '拠点空港',     pax: 3500,  rep: 54 },
+  { name: '国際空港',     pax: 8000,  rep: 64, need: 'ciq' },
+  { name: 'ハブ空港',     pax: 11000, rep: 74 },
+];
+const FAC = {
+  counter:   { name: 'カウンター', icon: '🧾', color: '#3d6e8c', cost: 300, up: 25, rank: 1, cap: 120,
+               desc: 'チェックインと保安検査。1時間に120人をさばく。足りないと行列ができて評判が下がる。' },
+  bench:     { name: 'ベンチ', icon: '🪑', color: '#7a6a4a', cost: 80, up: 3, rank: 1, comfort: 2,
+               desc: '快適さ+2。隣のお店（売店・カフェなど）の売上が上がる。' },
+  plant:     { name: '植木', icon: '🌳', color: '#3f7a4a', cost: 50, up: 2, rank: 1, comfort: 1,
+               desc: '快適さ+1。隣のお店の売上が上がる。' },
+  toilet:    { name: 'トイレ', icon: '🚻', color: '#4a6a8a', cost: 250, up: 12, rank: 1, comfort: 5,
+               desc: '快適さ+5。ただし隣の飲食店は売上が下がる。' },
+  kiosk:     { name: '売店', icon: '🏪', color: '#b0603a', cost: 400, up: 20, rank: 1,
+               shop: { draw: .30, spend: 4, cap: 80 }, adj: { bench: .1, plant: .1 },
+               desc: '旅客の30%が立ち寄る。1時間に80人まで。' },
+  parking:   { name: '駐車場', icon: '🅿️', color: '#4b5563', cost: 600, up: 15, rank: 1,
+               shop: { draw: .25, spend: 3, cap: 200 },
+               desc: '車で来る人の駐車料金。隣の効果は受けない。' },
+  cafe:      { name: 'カフェ', icon: '☕', color: '#8a5a3c', cost: 1500, up: 50, rank: 2,
+               shop: { draw: .22, spend: 3, cap: 60 }, adj: { bench: .15, plant: .1, toilet: -.15 },
+               desc: '旅客の22%が立ち寄る。1時間に60人まで。ベンチの隣だとよく売れる。' },
+  souvenir:  { name: 'おみやげ', icon: '🎁', color: '#b84a6a', cost: 2500, up: 70, rank: 2,
+               shop: { draw: .15, spend: 5, cap: 50 }, adj: { plant: .1, kiosk: .1, cafe: .1 },
+               desc: '旅客の15%が立ち寄る。お店どうしが隣だと売上が上がる（商店街）。' },
+  lounge:    { name: 'ラウンジ', icon: '🛋️', color: '#5b4a8a', cost: 5000, up: 150, rank: 2, comfort: 3, rep: 2,
+               shop: { draw: .05, spend: 12, cap: 30 }, adj: { plant: .15 },
+               desc: '評判+2・快適さ+3。上客がゆっくり過ごす。' },
+  restaurant:{ name: 'レストラン', icon: '🍜', color: '#a8452f', cost: 8000, up: 220, rank: 3,
+               shop: { draw: .14, spend: 6, cap: 50 }, adj: { plant: .1, bench: .1, deck: .2, toilet: -.15 },
+               desc: '旅客の14%が食事する。展望デッキの隣だと売上+20%。' },
+  station:   { name: '駅', icon: '🚉', color: '#2f6d6a', cost: 25000, up: 600, rank: 3, rep: 5, paxMul: .15, max: 1,
+               desc: '鉄道がつながる。どの便も旅客+15%・評判+5。1つまで。' },
+  deck:      { name: '展望デッキ', icon: '🔭', color: '#2d6a8f', cost: 10000, up: 200, rank: 3, comfort: 4, rep: 3, edge: 1,
+               shop: { draw: .10, spend: 3, cap: 120 }, adj: { plant: .1, bench: .1 },
+               desc: '評判+3・快適さ+4。いちばん上の列（飛行機の見える場所）だと売上2倍。' },
+  ciq:       { name: '出入国審査', icon: '🛂', color: '#35577a', cost: 15000, up: 350, rank: 3, cap: 150,
+               desc: '国際線の旅客を1時間に150人さばく。国際線の契約と国際空港への昇格に必要。' },
+  dutyfree:  { name: '免税店', icon: '💎', color: '#6a3fa0', cost: 30000, up: 700, rank: 4,
+               shop: { draw: .30, spend: 10, cap: 60, intl: 1 }, adj: { plant: .1, lounge: .15, souvenir: .1 },
+               desc: '国際線の旅客の30%が立ち寄る。ラウンジの隣だと売上+15%。' },
+  hotel:     { name: 'ホテル', icon: '🏨', color: '#8a6a2f', cost: 80000, up: 2000, rank: 5, rep: 3,
+               shop: { draw: .04, spend: 35, cap: 25 }, adj: { plant: .15, restaurant: .15 },
+               desc: '評判+3。乗り継ぎ客が泊まる。' },
+};
+const LV_COST = [0, 0, 2, 4];          // レベルアップ費用（建てた値段の倍率）
+const LV_CAP = [0, 1, 1.6, 2.3];          // お店の客数・カウンターの処理
+const LV_SPEND = [0, 1, 1.2, 1.4];        // お店の客単価
+const LV_COMFORT = [0, 1, 1.5, 2];
+const LV_UP = [0, 1, 1.5, 2.2];           // 維持費
+const lvOf = b => b.lv || 1;
+const FAC_ORDER = ['counter','kiosk','bench','plant','toilet','parking','cafe','souvenir','lounge','restaurant','deck','station','ciq','dutyfree','hotel'];
+const AIRLINES = [['そよかぜ航空','#3fa7d6'],['しろくま航空','#7f9bb3'],['つばめエア','#2b4c7e'],['みなみ風航空','#f08a5d'],
+  ['ほしぞらエア','#6c5ce7'],['にじいろ航空','#e84393'],['あさひ航空','#e17055'],['もりのエア','#00a383'],
+  ['こはく航空','#d9962b'],['るりいろ航空','#0984e3'],['さくら便','#f06292'],['ゆきどけエア','#5fa8e8']];
+const INTL = [['オーロラ・エア','#2ecc9a'],['コーラル航空','#ff6b6b'],['ルナ・ライン','#8e7dff'],['サバンナ航空','#e8b040'],
+  ['ノルド航空','#3fc1c9'],['マリーナ航空','#00a8a8']];
+const DOM_DEST = ['札幌','仙台','東京','名古屋','大阪','福岡','那覇','金沢','広島','松山','鹿児島','函館','新潟','高知','石垣','青森'];
+const INTL_DEST = ['ソウル','台北','上海','香港','バンコク','シンガポール','ホノルル','シドニー','パリ','ロンドン','ニューヨーク','ドバイ'];
+const EVENTS = {
+  holiday: { name: '連休', desc: 'どの便も旅客+30%', paxMul: 1.3 },
+  wind:    { name: '強風', desc: '滑走路の処理能力-30%', rwMul: .7 },
+  school:  { name: '修学旅行', desc: '売店・おみやげの売上+50%', shopMul: { kiosk: 1.5, souvenir: 1.5 } },
+  fog:     { name: '朝霧', desc: '9:00まで着陸できない', fogUntil: 180 },
+};
+const MISSIONS = [
+  { id: 'kiosk',  rank: 1, text: '売店を建てる', rw: 300, chk: () => cnt('kiosk') >= 1 },
+  { id: 'gate2',  rank: 1, text: 'ゲートを2つにする', rw: 500, chk: () => gateCount() >= 2 },
+  { id: 'relax',  rank: 1, text: 'ベンチか植木を3つ置く', rw: 200, chk: () => cnt('bench') + cnt('plant') >= 3 },
+  { id: 'air3',   rank: 1, text: '3つの路線と契約する', rw: 800, chk: () => S.contracts.length >= 3 },
+  { id: 'pax500', rank: 1, text: '1日の旅客 500人', rw: 800, chk: () => S.today.pax >= 500 },
+  { id: 'gateM',  rank: 2, text: 'ゲートMを作る', rw: 1500, chk: () => S.gates.some(g => g >= 2) },
+  { id: 'cafe',   rank: 2, text: 'カフェを建てる', rw: 1000, chk: () => cnt('cafe') >= 1 },
+  { id: 'rw2',    rank: 2, text: '滑走路を Lv2 にする', rw: 1500, chk: () => S.runway >= 2 },
+  { id: 'land',   rank: 2, text: '土地を広げる', rw: 1500, chk: () => S.land >= 4 },
+  { id: 'pax2k',  rank: 2, text: '1日の旅客 2,000人', rw: 3000, chk: () => S.today.pax >= 2000 },
+  { id: 'station',rank: 3, text: '駅をつくる', rw: 8000, chk: () => cnt('station') >= 1 },
+  { id: 'gateL',  rank: 3, text: 'ゲートLを作る', rw: 5000, chk: () => S.gates.some(g => g >= 3) },
+  { id: 'ciq',    rank: 3, text: '出入国審査をつくる', rw: 6000, chk: () => cnt('ciq') >= 1 },
+  { id: 'sales',  rank: 3, text: '1日のお店の売上 ¥20,000', rw: 10000, chk: () => S.today.shop >= 20000 },
+  { id: 'intl',   rank: 4, text: '国際線と契約する', rw: 10000, chk: () => S.contracts.some(c => c.intl) },
+  { id: 'duty',   rank: 4, text: '免税店を建てる', rw: 15000, chk: () => cnt('dutyfree') >= 1 },
+  { id: 'rep80',  rank: 4, text: '評判 ★4.0', rw: 20000, chk: () => S.rep >= 80 },
+  { id: 'rw4',    rank: 4, text: '第2滑走路をつくる', rw: 40000, chk: () => S.runway >= 4 },
+  { id: 'hotel',  rank: 5, text: 'ホテルを建てる', rw: 30000, chk: () => cnt('hotel') >= 1 },
+  { id: 'pax20k', rank: 5, text: '1日の旅客 20,000人', rw: 100000, chk: () => S.today.pax >= 20000 },
+];
+
+// ============ 状態 ============
+let S = null;            // セーブされる状態
+let C = {};              // 建物から計算する値（キャッシュ）
+let speed = 1, lastSpeed = 1, acc = 0, sel = null, lowPower = false;
+const floats = [];
+
+function newToday() { return { pax: 0, flights: 0, ontime: 0, late: 0, cancels: 0, fees: 0, shop: 0, upkeep: 0, peak: 0, crowdWarn: false }; }
+function newGame() {
+  S = {
+    v: 1, money: 3000, day: 1, t: 0, rep: 30, rank: 1, runway: 1, land: 3,
+    grid: Array(COLS * TROWS).fill(null), gates: Array(COLS).fill(0),
+    contracts: [], offers: [], flights: [], rec: [], rwb: 1, fid: 1, cid: 1,
+    ema: { flow: 0, crowd: 0 }, today: newToday(), last: null, missions: {}, event: null, nextEvent: null,
+    dayOver: false, seenHelp: false, totals: { pax: 0, flights: 0 },
+  };
+  S.gates[1] = 1;
+  S.grid[0 * COLS + 1] = { k: 'counter', earn: 0, hr: 0 };
+  S.grid[1 * COLS + 2] = { k: 'plant', earn: 0, hr: 0 };
+  S.contracts.push({ id: S.cid++, name: 'そよかぜ航空', color: '#3fa7d6', dest: '札幌', size: 1, perDay: 4, fee: 150, pax: 60, intl: 0 });
+  recalc();
+  for (let i = 0; i < 3; i++) S.offers.push(genOffer());
+  scheduleDay(0);
+}
+
+// ============ セーブ ============
+function save() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) {}
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (!d || d.v !== 1) return false;
+    S = d; recalc(); return true;
+  } catch (e) { return false; }
+}
+
+// ============ 計算 ============
+function cnt(k) { return C.counts?.[k] || 0; }
+function gateCount() { return S.gates.filter(g => g > 0).length; }
+function idx(r, c) { return r * COLS + c; }
+function neighbors(r, c) {
+  const out = [];
+  for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nc < 0 || nr >= S.land || nc >= COLS) continue;
+    out.push([nr, nc]);
+  }
+  return out;
+}
+function adjInfo(r, c, k) {
+  const f = FAC[k]; let m = 0; const parts = [];
+  if (f.adj) for (const [nr, nc] of neighbors(r, c)) {
+    const n = S.grid[idx(nr, nc)];
+    if (n && f.adj[n.k] != null) { m += f.adj[n.k]; parts.push([FAC[n.k].name, f.adj[n.k]]); }
+  }
+  m = clamp(m, -.3, .5);
+  let mul = 1 + m;
+  if (f.edge && r === 0) { mul *= 2; parts.push(['いちばん上の列', '×2']); }
+  return { mul, parts };
+}
+function recalc() {
+  C = { ccap: 0, ciqCap: 0, comfort: 0, repBonus: 0, paxMul: 0, variety: 0, counts: {}, shops: {}, upkeep: 0 };
+  const repTypes = new Set(), variety = new Set();
+  for (let r = 0; r < TROWS; r++) for (let c = 0; c < COLS; c++) {
+    const b = S.grid[idx(r, c)]; if (!b) continue;
+    const f = FAC[b.k];
+    C.counts[b.k] = (C.counts[b.k] || 0) + 1;
+    const lv = lvOf(b);
+    C.upkeep += f.up * LV_UP[lv];
+    if (b.k === 'counter') C.ccap += f.cap * LV_CAP[lv];
+    else if (b.k === 'ciq') C.ciqCap += f.cap * LV_CAP[lv];
+    else variety.add(b.k);
+    if (f.comfort) C.comfort += f.comfort * LV_COMFORT[lv];
+    if (f.rep && !repTypes.has(b.k)) { repTypes.add(b.k); C.repBonus += f.rep; }
+    if (f.paxMul) C.paxMul += f.paxMul;
+    if (f.shop) (C.shops[b.k] ||= []).push({ b, mul: adjInfo(r, c, b.k).mul });
+  }
+  C.variety = variety.size;
+  for (const g of S.gates) C.upkeep += GATE_UP[g];
+  C.upkeep += RUNWAY[S.runway].up;
+  markStatic();
+}
+function repParts() {
+  const ontime = S.rec.length ? S.rec.reduce((a, b) => a + b, 0) / S.rec.length : 1;
+  const wait = clamp(1 - S.ema.crowd * 2, 0, 1);
+  const need = 2 + S.ema.flow / 40;
+  const comfort = clamp(C.comfort / need, 0, 1);
+  const variety = Math.min(24, C.variety * 2);
+  return { ontime, wait, comfort, variety, bonus: C.repBonus };
+}
+function repTarget() {
+  const p = repParts();
+  return clamp(10 + 40 * (.4 * p.ontime + .3 * p.wait + .3 * p.comfort) + p.variety + p.bonus, 0, 100);
+}
+
+// ============ 便と契約 ============
+function genOffer() {
+  const r = S.rank;
+  const used = new Set([...S.contracts, ...S.offers].map(c => c.name + c.dest));
+  const intl = cnt('ciq') > 0 && Math.random() < (r >= 4 ? .45 : .3);
+  let maxS = 1;
+  if (r >= 2 && S.rep >= 35) maxS = 2;
+  if (r >= 3 && S.rep >= 50) maxS = 3;
+  let size = 1; const x = Math.random();
+  if (maxS >= 2 && x < (r >= 4 ? .85 : .6)) size = 2;
+  if (maxS >= 3 && x < (r >= 4 ? .45 : .28)) size = 3;
+  if (intl) size = Math.max(2, size);
+  let name, color, dest;
+  for (let i = 0; i < 30; i++) {
+    [name, color] = pick(intl ? INTL : AIRLINES); dest = pick(intl ? INTL_DEST : DOM_DEST);
+    if (!used.has(name + dest)) break;
+  }
+  const perDay = size === 3 ? ri(1, 3) : size === 2 ? ri(2, 4) : ri(2, 5);
+  const fm = rnd(.85, 1.2);
+  return {
+    id: S.cid++, name, color, dest, size, perDay, intl: intl ? 1 : 0,
+    fee: Math.round(FEE[size] * fm * (intl ? 1.6 : 1) / 10) * 10,
+    pax: Math.round(PAX[size] * (intl ? 1.1 : 1) * rnd(.9, 1.12)),
+  };
+}
+function addFlights(c, fromT) {
+  const ev = EVENTS[S.event] || {};
+  const start = 60, end = 960, span = (end - start) / c.perDay;
+  for (let i = 0; i < c.perDay; i++) {
+    const arr = Math.round((start + (i + rnd(.1, .9)) * span) / 5) * 5;
+    if (arr < fromT + 10) continue;
+    S.flights.push({
+      id: S.fid++, cid: c.id, name: c.name, color: c.color, dest: c.dest, size: c.size, intl: c.intl,
+      pax: Math.round(c.pax * (1 + C.paxMul) * (ev.paxMul || 1) * rnd(.85, 1.1)), fee: c.fee,
+      arr, st: 'sched', t0: 0, gate: -1, why: '',
+    });
+  }
+  S.flights.sort((a, b) => a.arr - b.arr);
+}
+function scheduleDay(fromT) { S.flights = []; for (const c of S.contracts) addFlights(c, fromT); }
+function gateBusy() {
+  const busy = new Set();
+  for (const f of S.flights) if (f.gate >= 0 && (f.st === 'land' || f.st === 'in' || f.st === 'park' || f.st === 'ready')) busy.add(f.gate);
+  return busy;
+}
+function findGate(size) {
+  const busy = gateBusy(); let best = -1;
+  for (let i = 0; i < COLS; i++) {
+    const g = S.gates[i];
+    if (g >= size && !busy.has(i) && (best < 0 || g < S.gates[best])) best = i;
+  }
+  return best;
+}
+function hasGateFor(size) { return S.gates.some(g => g >= size); }
+function gateLoad() {
+  // ざっくりした混み具合：必要な駐機時間 ÷ 使えるゲートの時間
+  let need = 0; for (const c of S.contracts) need += c.perDay * (TURN[c.size] + 8);
+  const cap = gateCount() * 900;
+  return cap ? need / cap : (need ? 9 : 0);
+}
+
+// ============ 1分ずつ進める ============
+function stepMinute() {
+  const t = S.t, ev = EVENTS[S.event] || {}, D = S.today;
+  S.rwb = Math.min(1.5, S.rwb + RUNWAY[S.runway].cap * (ev.rwMul || 1) / 60);
+  for (const f of S.flights) {
+    const el = t - f.t0;
+    if (f.st === 'sched' && t >= f.arr) f.st = 'hold';
+    else if (f.st === 'land' && el >= 3) { f.st = 'in'; f.t0 = t; }
+    else if (f.st === 'in' && el >= 3) { f.st = 'park'; f.t0 = t; }
+    else if (f.st === 'park' && el >= TURN[f.size]) { f.st = 'ready'; f.t0 = t; }
+    else if (f.st === 'out' && el >= 3) { f.st = 'tko'; f.t0 = t; }
+    else if (f.st === 'tko' && el >= 2) { f.st = 'done'; }
+  }
+  // 出発が先（ゲートを空けるため）
+  for (const f of S.flights) if (f.st === 'ready' && S.rwb >= 1) { S.rwb--; f.st = 'out'; f.t0 = t; }
+  const fog = ev.fogUntil && t < ev.fogUntil;
+  for (const f of S.flights) {
+    if (f.st !== 'hold') continue;
+    const g = fog ? -1 : findGate(f.size);
+    if (fog) f.why = '霧';
+    else if (g < 0) f.why = hasGateFor(f.size) ? 'ゲートが満杯' : GATE_NAME[f.size] + 'がない';
+    else if (S.rwb < 1) f.why = '滑走路の混雑';
+    else {
+      {
+        S.rwb--; f.st = 'land'; f.t0 = t; f.gate = g;
+        const delay = t - f.arr;
+        S.money += f.fee; D.fees += f.fee; D.flights++; S.totals.flights++;
+        const score = delay <= 15 ? 1 : delay <= 45 ? .6 : .3;
+        if (delay <= 15) D.ontime++; else D.late++;
+        pushRec(score);
+        continue;
+      }
+    }
+    if (t - f.arr >= 90) cancelFlight(f);
+  }
+  // 旅客の流れ
+  let flowD = 0, flowI = 0;
+  for (const f of S.flights) if (f.st === 'park') { const p = f.pax / TURN[f.size]; if (f.intl) flowI += p; else flowD += p; }
+  const flow = flowD + flowI;
+  D.pax += flow; S.totals.pax += flow;
+  const ratio = flow > 0 ? Math.min(1, (C.ccap / 60) / flow) : 1;
+  const sD = flowD * ratio;
+  const sI = Math.min(flowI * ratio, C.ciqCap / 60);
+  const served = sD + sI;
+  const crowd = flow > 0 ? 1 - served / flow : 0;
+  S.ema.crowd += (crowd - S.ema.crowd) * .03;
+  S.ema.flow += (flow * 60 - S.ema.flow) * .02;
+  D.peak = Math.max(D.peak, flow * 60);
+  if (S.ema.crowd > .25 && !D.crowdWarn) { D.crowdWarn = true; toast('🧾 カウンターに行列ができています'); }
+  // お店
+  for (const k in C.shops) {
+    const sh = FAC[k].shop, list = C.shops[k];
+    const demand = (sh.intl ? sI : served) * sh.draw;
+    // 客は各店の受け入れ数に比例して分かれる
+    const caps = list.map(s => sh.cap / 60 * LV_CAP[lvOf(s.b)]), capSum = caps.reduce((a, b) => a + b, 0);
+    const tot = Math.min(demand, capSum), sm = ev.shopMul?.[k] || 1;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      const m = tot * caps[i] / capSum * sh.spend * LV_SPEND[lvOf(s.b)] * s.mul * sm;
+      S.money += m; D.shop += m; s.b.earn += m; s.b.hr += m;
+    }
+  }
+  // 評判
+  S.rep += (repTarget() - S.rep) * .002;
+  S.t++;
+  if (S.t % 60 === 0) hourly();
+  if (S.t >= DAY_LEN) endDay();
+}
+function pushRec(v) { S.rec.push(v); if (S.rec.length > 30) S.rec.shift(); }
+function cancelFlight(f) {
+  f.st = 'cancel'; S.today.cancels++; pushRec(0); S.rep = Math.max(0, S.rep - 1.5);
+  toast(`✈️ ${f.name}（${f.dest}）が欠航：${f.why || '遅れ'}`);
+}
+function hourly() {
+  if (!lowPower) for (let r = 0; r < S.land; r++) for (let c = 0; c < COLS; c++) {
+    const b = S.grid[idx(r, c)];
+    if (b && b.hr >= 1) floats.push({ x: (c + .5) * cell, y: yTm + (r + .3) * cell, text: '+' + Math.round(b.hr), life: 1.4 });
+  }
+  for (const b of S.grid) if (b) b.hr = 0;
+  checkMissions(); save();
+}
+
+// ============ 1日の終わり ============
+function endDay() {
+  const D = S.today;
+  for (const f of S.flights) if (f.st === 'hold' || f.st === 'sched') { f.why = f.why || '運用時間の終わり'; f.st = 'cancel'; D.cancels++; pushRec(0); }
+  D.upkeep = C.upkeep; S.money -= C.upkeep;
+  checkMissions();
+  let rankUp = null;
+  const nx = RANKS[S.rank + 1];
+  if (nx && D.pax >= nx.pax && S.rep >= nx.rep && (!nx.need || cnt(nx.need) > 0)) { S.rank++; rankUp = nx.name; }
+  S.last = { ...D, day: S.day, rep: S.rep };
+  S.offers = []; for (let i = 0; i < 3; i++) S.offers.push(genOffer());
+  S.seenOffers = false;
+  S.nextEvent = Math.random() < .35 ? pick(Object.keys(EVENTS)) : null;
+  S.dayOver = true; save();
+  openReport(rankUp);
+}
+function startDay() {
+  S.day++; S.t = 0; S.today = newToday(); S.dayOver = false; S.rwb = 1;
+  S.event = S.nextEvent; S.nextEvent = null;
+  for (const b of S.grid) if (b) { b.earn = 0; b.hr = 0; }
+  scheduleDay(0); save(); closeSheet(); updateHud();
+  if (S.event) toast(`きょうは「${EVENTS[S.event].name}」：${EVENTS[S.event].desc}`);
+}
+function checkMissions() {
+  for (const m of MISSIONS) {
+    if (m.rank > S.rank || S.missions[m.id]) continue;
+    if (m.chk()) { S.missions[m.id] = 1; S.money += m.rw; toast(`🎯 目標達成「${m.text}」 +${yen(m.rw)}`); }
+  }
+}
+
+// ============ 操作 ============
+function build(r, c, k) {
+  const f = FAC[k];
+  if (S.money < f.cost || S.grid[idx(r, c)]) return;
+  if (f.max && cnt(k) >= f.max) return;
+  S.money -= f.cost; S.grid[idx(r, c)] = { k, earn: 0, hr: 0 };
+  recalc(); checkMissions(); save(); closeSheet();
+}
+function refund(b) { let t = FAC[b.k].cost; for (let l = 2; l <= lvOf(b); l++) t += FAC[b.k].cost * LV_COST[l]; return Math.floor(t / 2); }
+function levelUp(r, c) {
+  const b = S.grid[idx(r, c)]; if (!b) return;
+  const lv = lvOf(b); if (lv >= 3) return;
+  const cost = Math.round(FAC[b.k].cost * LV_COST[lv + 1]);
+  if (S.money < cost) return;
+  S.money -= cost; b.lv = lv + 1; recalc(); checkMissions(); save(); openCell(r, c);
+}
+function demolish(r, c) {
+  const b = S.grid[idx(r, c)]; if (!b) return;
+  S.money += refund(b); S.grid[idx(r, c)] = null;
+  recalc(); save(); closeSheet();
+}
+function upgradeGate(i) {
+  const lv = S.gates[i] + 1; if (lv > 3) return;
+  if (S.money < GATE_COST[lv] || S.rank < GATE_RANK[lv]) return;
+  if (gateBusy().has(i) && lv === 1) return;
+  S.money -= GATE_COST[lv]; S.gates[i] = lv; recalc(); checkMissions(); save(); openGate(i);
+}
+function upgradeRunway() {
+  const nx = RUNWAY[S.runway + 1]; if (!nx || S.money < nx.cost || S.rank < nx.rank) return;
+  S.money -= nx.cost; S.runway++; recalc(); checkMissions(); save(); openRunway();
+}
+function buyLand() {
+  const cost = LAND_COST[S.land]; if (!cost || S.money < cost) return;
+  S.money -= cost; S.land++; recalc(); checkMissions(); save(); closeSheet();
+}
+function acceptOffer(id) {
+  const i = S.offers.findIndex(o => o.id === id); if (i < 0) return;
+  const c = S.offers.splice(i, 1)[0]; S.contracts.push(c);
+  if (!S.dayOver) addFlights(c, S.t);
+  checkMissions(); save(); openAir();
+}
+function dropContract(id) {
+  const i = S.contracts.findIndex(c => c.id === id); if (i < 0) return;
+  S.contracts.splice(i, 1);
+  S.flights = S.flights.filter(f => !(f.cid === id && f.st === 'sched'));
+  S.rep = Math.max(0, S.rep - 1); save(); openAir();
+}
+
+// ============ 画面の大きさ ============
+const cv = $('#cv'), ctx = cv.getContext('2d');
+const st = document.createElement('canvas'), sctx = st.getContext('2d');
+let cell = 44, W = 352, H = 440, RW, TX, AP, yRw = 0, yTx, yAp, yTm, dpr = 1, staticDirty = true;
+function layout() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const vw = Math.min(window.innerWidth - 16, 460);
+  const other = ['.hud', '#board', '#advisor', '.bar'].reduce((a, q) => a + ($(q)?.offsetHeight || 0), 0);
+  const vh = window.innerHeight - other - 60;
+  cell = Math.floor(Math.min(vw / COLS, vh / 10.3));
+  W = cell * COLS; RW = cell * 1.5; TX = cell * .55; AP = cell * 1.25;
+  yTx = RW; yAp = RW + TX; yTm = yAp + AP; H = yTm + cell * TROWS;
+  for (const c of [cv, st]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  markStatic();
+}
+function markStatic() { staticDirty = true; requestDraw(); }
+function rwY(kind) { // kind: 'a' 着陸 / 'd' 離陸
+  if (S.runway >= 4) return yRw + RW * (kind === 'a' ? .27 : .73);
+  return yRw + RW * .5;
+}
+
+// ============ 描画（動かないもの） ============
+function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
+function drawRunway(g, cy, h) {
+  g.fillStyle = '#3a3f46'; g.fillRect(cell * .15, cy - h / 2, W - cell * .3, h);
+  g.fillStyle = '#e8e8e8';
+  for (let x = cell * .9; x < W - cell * .9; x += cell * .7) g.fillRect(x, cy - 1, cell * .38, 2);
+  for (let i = 0; i < 4; i++) {
+    const yy = cy - h / 2 + h * (.12 + i * .22);
+    g.fillRect(cell * .25, yy, cell * .3, h * .1); g.fillRect(W - cell * .55, yy, cell * .3, h * .1);
+  }
+}
+function drawStatic() {
+  const g = sctx; g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#3d6b47'; g.fillRect(0, 0, W, H);
+  // 滑走路
+  if (S.runway >= 4) { drawRunway(g, rwY('a'), RW * .3); drawRunway(g, rwY('d'), RW * .3); }
+  else drawRunway(g, rwY('a'), RW * (S.runway >= 3 ? .46 : S.runway >= 2 ? .42 : .38));
+  // 誘導路
+  const ty = yTx + TX / 2;
+  g.fillStyle = '#545b64'; g.fillRect(0, yTx + TX * .18, W, TX * .64);
+  g.fillRect(W * .74 - cell * .18, rwY('a'), cell * .36, ty - rwY('a'));
+  g.fillRect(cell * .5 - cell * .18, rwY('d'), cell * .36, ty - rwY('d'));
+  if (S.runway >= 2) g.fillRect(W * .42 - cell * .18, rwY('a'), cell * .36, ty - rwY('a'));
+  g.strokeStyle = '#e8c547'; g.lineWidth = 1.5; g.setLineDash([]);
+  g.beginPath(); g.moveTo(0, ty); g.lineTo(W, ty); g.stroke();
+  // エプロン
+  g.fillStyle = '#8f98a3'; g.fillRect(0, yAp, W, AP);
+  for (let i = 0; i < COLS; i++) {
+    const gx = (i + .5) * cell, lv = S.gates[i];
+    if (lv > 0) {
+      g.strokeStyle = '#f2d14b'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(gx, ty); g.lineTo(gx, yAp + AP * .85); g.stroke();
+      g.fillStyle = '#c9ced6'; g.fillRect(gx + cell * .18, yAp + AP * .55, cell * .14, AP * .45);
+      g.fillStyle = '#1d2733'; g.font = `600 ${Math.max(12, Math.round(cell * .26))}px -apple-system,sans-serif`;
+      g.textAlign = 'left'; g.textBaseline = 'bottom';
+      g.fillText(['', 'S', 'M', 'L'][lv], i * cell + 3, yAp + AP - 2);
+    } else {
+      g.strokeStyle = 'rgba(255,255,255,.35)'; g.setLineDash([4, 4]); g.lineWidth = 1;
+      g.strokeRect(i * cell + 4, yAp + 6, cell - 8, AP - 12); g.setLineDash([]);
+      g.fillStyle = 'rgba(255,255,255,.45)'; g.font = `${Math.round(cell * .4)}px -apple-system,sans-serif`;
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('+', (i + .5) * cell, yAp + AP / 2);
+    }
+  }
+  // ターミナルの床
+  for (let r = 0; r < TROWS; r++) for (let c = 0; c < COLS; c++) {
+    const x = c * cell, y = yTm + r * cell;
+    if (r < S.land) { g.fillStyle = (r + c) % 2 ? '#e6dfcf' : '#ded6c4'; g.fillRect(x, y, cell, cell); }
+    else { g.fillStyle = (r + c) % 2 ? '#365f40' : '#33593c'; g.fillRect(x, y, cell, cell); }
+  }
+  g.fillStyle = '#5a6b7d'; g.fillRect(0, yTm - 3, W, 3);
+  if (S.land < TROWS) {
+    const y = yTm + S.land * cell;
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, y, W, cell);
+    g.fillStyle = '#ffcd1c'; g.font = `500 ${Math.max(13, Math.round(cell * .3))}px -apple-system,sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(`🔒 土地を広げる ${yen(LAND_COST[S.land])}`, W / 2, y + cell / 2);
+  }
+  // 建物
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (let r = 0; r < S.land; r++) for (let c = 0; c < COLS; c++) {
+    const b = S.grid[idx(r, c)]; if (!b) continue;
+    const f = FAC[b.k], x = c * cell, y = yTm + r * cell;
+    g.fillStyle = f.color; rr(g, x + 2.5, y + 2.5, cell - 5, cell - 5, cell * .18); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 1; g.stroke();
+    g.fillStyle = 'rgba(255,255,255,.14)'; rr(g, x + 2.5, y + 2.5, cell - 5, (cell - 5) * .45, cell * .18); g.fill();
+    g.font = `${Math.round(cell * .5)}px -apple-system,"Apple Color Emoji",sans-serif`;
+    g.fillStyle = '#fff'; g.fillText(f.icon, x + cell / 2, y + cell / 2 + 1);
+    const lv = lvOf(b);
+    if (lv > 1) { g.fillStyle = '#ffcd1c'; for (let i = 0; i < lv; i++) { g.beginPath(); g.arc(x + 8 + i * 7, y + cell - 8, 2.5, 0, Math.PI * 2); g.fill(); } }
+    if (f.shop) {
+      const m = adjInfo(r, c, b.k).mul;
+      if (Math.abs(m - 1) > .01) {
+        g.font = `600 ${Math.max(12, Math.round(cell * .24))}px -apple-system,sans-serif`;
+        g.fillStyle = m > 1 ? '#bff5c9' : '#ffc1c1';
+        g.textAlign = 'right'; g.textBaseline = 'top';
+        g.fillText((m > 1 ? '+' : '') + Math.round((m - 1) * 100) + '%', x + cell - 4, y + 3);
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+      }
+    }
+  }
+  staticDirty = false;
+}
+
+// ============ 描画（動くもの） ============
+function along(pts, p) {
+  let total = 0; const seg = [];
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]); seg.push(d); total += d; }
+  let d = clamp(p, 0, 1) * total;
+  for (let i = 0; i < seg.length; i++) {
+    if (d <= seg[i] || i === seg.length - 1) {
+      const q = seg[i] ? d / seg[i] : 1, a = pts[i], b = pts[i + 1];
+      return { x: lerp(a[0], b[0], q), y: lerp(a[1], b[1], q), ang: Math.atan2(b[1] - a[1], b[0] - a[0]), seg: i };
+    }
+    d -= seg[i];
+  }
+}
+function planePos(f, tt) {
+  const el = tt - f.t0, gx = (f.gate + .5) * cell, py = yAp + AP * .42, ty = yTx + TX / 2;
+  const ya = rwY('a'), yd = rwY('d');
+  if (f.st === 'land') {
+    const p = clamp(el / 3, 0, 1), e = 1 - (1 - p) ** 2;
+    return { x: lerp(-cell * 1.5, W * .74, e), y: ya, ang: 0, sc: 1 + (1 - p) * .35, air: 1 - p };
+  }
+  if (f.st === 'in') {
+    const q = along([[W * .74, ya], [W * .74, ty], [gx, ty], [gx, py]], el / 3);
+    return { ...q, sc: 1 };
+  }
+  if (f.st === 'park' || f.st === 'ready') return { x: gx, y: py, ang: Math.PI / 2, sc: 1 };
+  if (f.st === 'out') {
+    const q = along([[gx, py], [gx, ty], [cell * .5, ty], [cell * .5, yd], [cell * .9, yd]], el / 3);
+    if (q.seg === 0) q.ang = Math.PI / 2; // 押し出し（後ろ向き）
+    return { ...q, sc: 1 };
+  }
+  if (f.st === 'tko') {
+    const p = clamp(el / 2, 0, 1), e = p * p;
+    return { x: lerp(cell * .9, W + cell * 2, e), y: yd - e * cell * .3, ang: -e * .15, sc: 1 + e * .45, air: e };
+  }
+  return null;
+}
+function drawPlane(g, x, y, ang, size, color, sc, air) {
+  const L = cell * [0, .55, .75, .98][size] * sc;
+  if (air > 0) { // 影
+    g.save(); g.translate(x + air * cell * .5, y + air * cell * .6); g.rotate(ang); g.fillStyle = 'rgba(0,0,0,.18)';
+    g.beginPath(); g.ellipse(0, 0, L / 2, L * .1, 0, 0, Math.PI * 2); g.fill(); g.restore();
+  }
+  g.save(); g.translate(x, y); g.rotate(ang);
+  g.fillStyle = '#f4f6f8';
+  g.beginPath(); // 主翼
+  g.moveTo(L * .08, 0); g.lineTo(-L * .12, -L * .46); g.lineTo(-L * .22, -L * .46); g.lineTo(-L * .1, 0);
+  g.lineTo(-L * .22, L * .46); g.lineTo(-L * .12, L * .46); g.closePath(); g.fill();
+  g.fillStyle = color; // 尾翼
+  g.beginPath(); g.moveTo(-L * .36, 0); g.lineTo(-L * .48, -L * .19); g.lineTo(-L * .52, -L * .19); g.lineTo(-L * .46, 0);
+  g.lineTo(-L * .52, L * .19); g.lineTo(-L * .48, L * .19); g.closePath(); g.fill();
+  g.fillStyle = '#ffffff'; // 胴体
+  rr(g, -L * .5, -L * .075, L, L * .15, L * .075); g.fill();
+  g.fillStyle = color; g.fillRect(-L * .5, -L * .02, L * .75, L * .04);
+  g.fillStyle = '#29425c'; g.fillRect(L * .36, -L * .045, L * .06, L * .09);
+  g.restore();
+}
+let drawPending = false, lastFrame = 0, lastDraw = 0;
+function requestDraw() { if (!drawPending) { drawPending = true; requestAnimationFrame(frame); } }
+function draw() {
+  if (staticDirty) drawStatic();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(st, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const tt = S.t + (speed ? acc / MS_PER_MIN : 0);
+  // 選択中のマス
+  if (sel) {
+    ctx.strokeStyle = '#ffc857'; ctx.lineWidth = 3;
+    if (sel.type === 'cell') ctx.strokeRect(sel.c * cell + 1.5, yTm + sel.r * cell + 1.5, cell - 3, cell - 3);
+    if (sel.type === 'gate') ctx.strokeRect(sel.i * cell + 1.5, yAp + 1.5, cell - 3, AP - 3);
+  }
+  // 飛行機（駐機 → 地上 → 空中 の順）
+  const order = { park: 0, ready: 0, in: 1, out: 1, land: 2, tko: 2 };
+  const vis = S.flights.filter(f => f.st in order).sort((a, b) => order[a.st] - order[b.st]);
+  for (const f of vis) { const p = planePos(f, tt); if (p) drawPlane(ctx, p.x, p.y, p.ang, f.size, f.color, p.sc, p.air || 0); }
+  // 上空待機
+  const hold = S.flights.filter(f => f.st === 'hold').length;
+  if (hold) {
+    const txt = `上空で待機 ✈×${hold}`;
+    ctx.font = `600 ${Math.max(12, Math.round(cell * .26))}px -apple-system,sans-serif`;
+    const w = ctx.measureText(txt).width + 12;
+    ctx.fillStyle = 'rgba(200,50,50,.92)'; rr(ctx, W - w - 4, 4, w, Math.max(20, cell * .4), 6); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, W - w + 2, 4 + Math.max(20, cell * .4) / 2);
+  }
+  // 夜
+  const t = S.t, dark = t < 60 ? .28 * (1 - t / 60) : t > 720 ? Math.min(.42, (t - 720) / 240 * .42) : 0;
+  if (dark > 0) {
+    ctx.fillStyle = `rgba(8,14,40,${dark})`; ctx.fillRect(0, 0, W, H);
+    if (dark > .12) {
+      ctx.fillStyle = `rgba(255,220,120,${dark * 2})`;
+      const ys = S.runway >= 4 ? [rwY('a'), rwY('d')] : [rwY('a')], hh = S.runway >= 4 ? RW * .15 : RW * .2;
+      for (const y of ys) for (let x = cell * .3; x < W - cell * .2; x += cell * .5) { ctx.fillRect(x, y - hh - 1, 2, 2); ctx.fillRect(x, y + hh - 1, 2, 2); }
+    }
+  }
+  // 売上の数字
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `600 ${Math.max(13, Math.round(cell * .3))}px -apple-system,sans-serif`;
+  for (const f of floats) {
+    ctx.globalAlpha = clamp(f.life, 0, 1); ctx.fillStyle = '#1b5e20';
+    ctx.fillText(f.text, f.x + 1, f.y + 1); ctx.fillStyle = '#c8ffcf'; ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+}
+function frame(now) {
+  drawPending = false;
+  const dt = Math.min(250, now - (lastFrame || now)); lastFrame = now;
+  const running = speed > 0 && !S.dayOver && !sheetOpen();
+  if (running) {
+    acc += dt * speed;
+    let n = 0;
+    while (acc >= MS_PER_MIN && n < 200) { acc -= MS_PER_MIN; stepMinute(); n++; if (S.dayOver) { acc = 0; break; } }
+  }
+  for (let i = floats.length - 1; i >= 0; i--) { floats[i].life -= dt / 1000; floats[i].y -= dt * .02; if (floats[i].life <= 0) floats.splice(i, 1); }
+  const minGap = lowPower ? 95 : 30;
+  if (now - lastDraw >= minGap || !running) { draw(); lastDraw = now; updateHud(); }
+  if (running || floats.length) requestDraw(); else lastFrame = 0;
+}
+
+// ============ HUD ============
+function stars(rep) {
+  const s = rep / 20, full = Math.floor(s), half = s - full >= .5 ? 1 : 0;
+  return '★'.repeat(full) + (half ? '★' : '') + `<span class="dim">${'★'.repeat(5 - full - half)}</span>`;
+}
+const ST_LABEL = { land: ['着陸', 'ok'], in: ['到着', 'ok'], park: ['搭乗中', 'mute'], ready: ['出発待ち', 'mute'], out: ['出発', 'mute'], tko: ['離陸', 'mute'] };
+function flightStatus(f) {
+  if (f.st === 'hold') return [`待機 ${Math.max(0, S.t - f.arr)}分`, S.t - f.arr >= 45 ? 'ng' : 'late'];
+  if (f.st === 'sched') return S.event === 'fog' && f.arr < EVENTS.fog.fogUntil ? ['遅れ見込み', 'late'] : ['定刻', 'ok'];
+  return ST_LABEL[f.st] || ['', 'mute'];
+}
+let boardKey = '';
+function updateBoard() {
+  const hold = S.flights.filter(f => f.st === 'hold');
+  const next = S.flights.filter(f => f.st === 'sched');
+  const rows = [...hold, ...next].slice(0, 3);
+  const key = S.t + '|' + rows.map(f => f.id + f.st).join(',');
+  if (key === boardKey) return; boardKey = key;
+  const doneN = S.flights.filter(f => f.st === 'done' || ['out', 'tko'].includes(f.st)).length;
+  let h = `<div class="hd"><span>到着便</span><span class="num">きょう ${doneN}/${S.flights.length}便${S.today.cancels ? `・欠航 ${S.today.cancels}` : ''}</span></div>`;
+  for (const f of rows) {
+    const [label, cls] = flightStatus(f);
+    h += `<div class="fl"><time>${hhmm(f.arr)}</time><span class="who"><i style="background:${f.color}"></i>${f.name}<small>${f.dest}・${SIZE_NAME[f.size]}</small></span><span class="chip ${cls}">${label}</span></div>`;
+  }
+  // 高さが変わらないよう、いつも3行ぶん描く
+  for (let i = rows.length; i < 3; i++) h += `<div class="fl"><time></time><span class="who muted">${i === 0 ? (S.dayOver ? '本日の運航は終了しました' : 'きょう到着する便はもうありません') : '&nbsp;'}</span><span></span></div>`;
+  $('#board').innerHTML = h;
+}
+// いちばん困っていることを1つだけ出す
+function advice() {
+  const hold = S.flights.filter(f => f.st === 'hold');
+  const firstEmptyGate = S.gates.findIndex(g => g === 0);
+  const firstEmptyCell = (() => { for (let r = 0; r < S.land; r++) for (let c = 0; c < COLS; c++) if (!S.grid[idx(r, c)]) return [r, c]; return null; })();
+  const missing = S.contracts.find(c => !hasGateFor(c.size));
+  if (missing) {
+    const gi = S.gates.findIndex(g => g > 0 && g < missing.size && S.rank >= GATE_RANK[missing.size]);
+    return { cls: 'ng', ic: '⛔', text: `${missing.name}の${SIZE_NAME[missing.size]}が止まれません。${GATE_NAME[missing.size]}が必要です`, go: 'ゲートへ', act: () => openGate(gi >= 0 ? gi : Math.max(0, firstEmptyGate)) };
+  }
+  if (hold.some(f => f.why === 'ゲートが満杯')) {
+    if (firstEmptyGate >= 0) return { cls: 'ng', ic: '🛬', text: 'ゲートが満杯で上空待ちの便があります。ゲートを増やしましょう', go: 'ゲートへ', act: () => openGate(firstEmptyGate) };
+    return { cls: 'ng', ic: '🛬', text: 'ゲートが満杯です。路線を減らすか、ゲートを大きくしましょう', go: '航空会社', act: openAir };
+  }
+  if (hold.some(f => f.why === '滑走路の混雑')) return { cls: 'warn', ic: '🛫', text: '滑走路が混んでいます。滑走路を強化しましょう', go: '滑走路', act: openRunway };
+  if (S.ema.crowd > .12) return { cls: 'warn', ic: '🧾', text: 'カウンターに行列ができています。カウンターを増やしましょう', go: '建てる', act: () => firstEmptyCell ? openCell(...firstEmptyCell, 'counter') : openLand() };
+  const p = repParts();
+  if (S.ema.flow > 30 && p.comfort < .6) return { cls: 'warn', ic: '🪑', text: '座る場所が足りません。ベンチやトイレを置きましょう', go: '建てる', act: () => firstEmptyCell ? openCell(...firstEmptyCell) : openLand() };
+  if (S.offers.length && !S.seenOffers) return { cls: 'tip', ic: '✉️', text: `航空会社から契約の話が${S.offers.length}件届いています`, go: '見る', act: openAir };
+  if (!cnt('kiosk') && firstEmptyCell) return { cls: 'tip', ic: '🏪', text: '売店を建てると、旅客の買い物でお金が入ります', go: '建てる', act: () => openCell(...firstEmptyCell, 'kiosk') };
+  if (!firstEmptyCell && S.land < TROWS) return { cls: 'tip', ic: '🔒', text: '空き地がありません。土地を広げましょう', go: '土地', act: openLand };
+  if (S.offers.length && gateLoad() < .5) return { cls: 'tip', ic: '✈️', text: 'ゲートに余裕があります。路線を増やせます', go: '航空会社', act: openAir };
+  const nx = RANKS[S.rank + 1];
+  if (nx) {
+    const paxNow = S.last ? Math.round(S.last.pax) : 0;
+    return { cls: '', ic: '🎯', text: `次は「${nx.name}」：1日の旅客 ${num(paxNow)}/${num(nx.pax)}人・評判★${(nx.rep / 20).toFixed(1)}`, go: '目標', act: openGoal };
+  }
+  return { cls: '', ic: '💡', text: '建物をタップするとレベルアップできます', go: '', act: null };
+}
+let advKey = '', advAct = null;
+function updateAdvisor() {
+  const a = advice(); advAct = a.act;
+  const key = a.cls + a.text;
+  if (key === advKey) return; advKey = key;
+  const el = $('#advisor');
+  el.className = 'advisor ' + a.cls;
+  el.innerHTML = `<span aria-hidden="true">${a.ic}</span><span>${a.text}</span>${a.go ? `<span class="go">${a.go}</span>` : ''}`;
+}
+let hudKey = '';
+function updateHud() {
+  updateBoard();
+  const k = [Math.round(S.money), S.day, S.t, Math.round(S.rep * 2), S.rank, S.event, S.offers.length, S.seenOffers].join('|');
+  if (k === hudKey) return; hudKey = k;
+  $('#money').textContent = yen(S.money);
+  $('#money').classList.toggle('neg', S.money < 0);
+  $('#day').textContent = S.day + '日目';
+  $('#time').textContent = hhmm(S.t);
+  $('#rep').innerHTML = stars(S.rep);
+  $('#rep').setAttribute('aria-label', `評判 ${(S.rep / 20).toFixed(1)}`);
+  $('#rank').textContent = RANKS[S.rank].name;
+  $('#event').textContent = S.event ? EVENTS[S.event].name : '';
+  $('#dotAir').classList.toggle('on', S.offers.length > 0 && !S.seenOffers);
+  if (S.t % 5 === 0 || !advKey) updateAdvisor();
+}
+
+// ============ シート ============
+const sheet = $('#sheet'), body = $('#sheetBody');
+function sheetOpen() { return !sheet.classList.contains('hidden'); }
+function openSheet(html) { body.innerHTML = html; sheet.classList.remove('hidden'); body.scrollTop = 0; requestDraw(); }
+function closeSheet() { sheet.classList.add('hidden'); sel = null; advKey = ''; updateAdvisor(); requestDraw(); }
+const X = '<button class="close" data-act="close" aria-label="閉じる">✕</button>';
+sheet.addEventListener('click', e => { if (e.target === sheet && !S.dayOver) closeSheet(); });
+body.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+  const a = b.dataset.act, v = b.dataset.v;
+  if (a === 'close') closeSheet();
+  else if (a === 'build') build(sel.r, sel.c, v);
+  else if (a === 'demolish') { if (b.dataset.sure) demolish(sel.r, sel.c); else { b.dataset.sure = 1; b.textContent = 'もう一度押すと取り壊します'; } }
+  else if (a === 'lvup') levelUp(sel.r, sel.c);
+  else if (a === 'gate') upgradeGate(+v);
+  else if (a === 'runway') upgradeRunway();
+  else if (a === 'land') buyLand();
+  else if (a === 'accept') acceptOffer(+v);
+  else if (a === 'drop') { if (b.dataset.sure) dropContract(+v); else { b.dataset.sure = 1; b.textContent = '本当に？'; } }
+  else if (a === 'next') startDay();
+  else if (a === 'help') openHelp();
+  else if (a === 'power') { lowPower = !lowPower; try { localStorage.setItem(SAVE_KEY + '-lp', lowPower ? '1' : ''); } catch (e) {} openMenu(); }
+  else if (a === 'reset') { if (b.dataset.sure) { newGame(); save(); closeSheet(); hudKey = ''; updateHud(); } else { b.dataset.sure = 1; b.textContent = 'もう一度押すと最初からになります'; } }
+  hudKey = ''; updateHud();
+});
+$('#advisor').addEventListener('click', () => { if (advAct && !S.dayOver) advAct(); });
+
+const pct = v => Math.round(v * 100) + '%';
+const signed = v => (v > 0 ? '+' : '') + Math.round(v * 100) + '%';
+function meter(v) { const c = v < .5 ? 'var(--ng)' : v < .8 ? 'var(--late)' : 'var(--ok)'; return `<div class="meter"><i style="width:${clamp(v, 0, 1) * 100}%;background:${c}"></i></div>`; }
+function loadMeter(v) { const c = v > .75 ? 'var(--ng)' : v > .55 ? 'var(--late)' : 'var(--ok)'; return `<div class="meter"><i style="width:${clamp(v, 0, 1) * 100}%;background:${c}"></i></div>`; }
+function pips(lv) { return `<span class="pips" aria-label="レベル${lv}">${[1, 2, 3].map(i => `<i class="${i <= lv ? 'on' : ''}"></i>`).join('')}</span>`; }
+const GROUPS = [
+  ['運営', ['counter', 'ciq']],
+  ['お店', ['kiosk', 'cafe', 'souvenir', 'restaurant', 'dutyfree', 'lounge', 'hotel']],
+  ['くつろぎ', ['bench', 'plant', 'toilet', 'deck']],
+  ['交通', ['parking', 'station']],
+];
+function shortEffect(k) {
+  const f = FAC[k];
+  if (k === 'counter') return '1時間に120人をさばく';
+  if (k === 'ciq') return '国際線の旅客を1時間に150人';
+  if (k === 'station') return 'どの便も旅客+15%・評判+5';
+  if (f.shop) return `旅客の${pct(f.shop.draw)}が${f.shop.intl ? '（国際線）' : ''}1人${f.shop.spend}円使う`;
+  return `快適さ+${f.comfort}${f.rep ? `・評判+${f.rep}` : ''}`;
+}
+function placeEffect(r, c, k) {
+  const f = FAC[k];
+  if (f.shop) {
+    const a = adjInfo(r, c, k);
+    if (Math.abs(a.mul - 1) > .01) return [`この場所なら売上 ${signed(a.mul - 1)}`, a.mul > 1 ? 'ok' : 'ng'];
+    return null;
+  }
+  const ups = [];
+  for (const [nr, nc] of neighbors(r, c)) {
+    const n = S.grid[idx(nr, nc)], v = n && FAC[n.k].adj?.[k];
+    if (v) ups.push([FAC[n.k].name, v]);
+  }
+  if (!ups.length) return null;
+  return [`隣の${ups.map(u => `${u[0]} ${signed(u[1])}`).join('・')}`, ups.some(u => u[1] < 0) ? 'ng' : 'ok'];
+}
+function buildRow(r, c, k) {
+  const f = FAC[k], maxed = f.max && cnt(k) >= f.max, fx = placeEffect(r, c, k);
+  return `<div class="row ${maxed ? 'off' : ''}"><div class="ic">${f.icon}</div>
+    <div class="bd"><b>${f.name}</b>${maxed ? '建てられるのは1つまで' : shortEffect(k)}${fx && !maxed ? `<br><span class="fx ${fx[1]}">${fx[0]}</span>` : ''}</div>
+    <button class="btn price" data-act="build" data-v="${k}" ${maxed || S.money < f.cost ? 'disabled' : ''}>${yen(f.cost)}</button></div>`;
+}
+function openCell(r, c, focus) {
+  sel = { type: 'cell', r, c };
+  const b = S.grid[idx(r, c)];
+  if (b) return openBuilding(r, c, b);
+  let h = `${X}<h2>ここに建てる</h2><p>お店は隣に置くもので売上が変わります。ベンチ・植木の隣は＋、飲食店の隣のトイレは−。</p>`;
+  const locked = [];
+  for (const [gname, keys] of GROUPS) {
+    let rows = '';
+    for (const k of keys) {
+      if (FAC[k].rank > S.rank) { locked.push(k); continue; }
+      rows += buildRow(r, c, k);
+    }
+    if (rows) h += `<h3>${gname}</h3><div class="list">${rows}</div>`;
+  }
+  if (locked.length) {
+    h += `<details class="locked"><summary>ランクが上がると建てられるもの（${locked.length}）</summary><div class="list">` +
+      locked.map(k => `<div class="row"><div class="ic">${FAC[k].icon}</div><div class="bd"><b>${FAC[k].name}</b>${RANKS[FAC[k].rank].name}で解放</div></div>`).join('') + '</div></details>';
+  }
+  openSheet(h);
+  if (focus) body.querySelector(`[data-v="${focus}"]`)?.closest('.row')?.scrollIntoView({ block: 'center' });
+}
+function openBuilding(r, c, b) {
+  const f = FAC[b.k], lv = lvOf(b), a = f.shop ? adjInfo(r, c, b.k) : null;
+  let h = `${X}<div class="top"><div class="big">${f.icon}</div><div><h2>${f.name}${pips(lv)}</h2><p>${f.desc}</p></div></div>`;
+  // いちばん大事な数字
+  if (f.shop) h += `<div class="stat"><div><small>きょうの売上</small><b class="signc">${yen(b.earn)}</b></div><div><small>場所の効果</small><b class="${a.mul > 1.01 ? 'ok' : a.mul < .99 ? 'ng' : ''}">×${a.mul.toFixed(2)}</b></div></div>`;
+  else if (b.k === 'counter') h += `<div class="stat"><div><small>全カウンターの処理</small><b>${num(C.ccap)}<small>人/時</small></b></div><div><small>いまの旅客の流れ</small><b class="${S.ema.flow > C.ccap ? 'ng' : ''}">${num(S.ema.flow)}<small>人/時</small></b></div></div>`;
+  else if (b.k === 'ciq') h += `<div class="stat"><div><small>出入国審査の処理</small><b>${num(C.ciqCap)}<small>人/時</small></b></div></div>`;
+  // レベルアップ
+  if (lv < 3) {
+    const cost = Math.round(f.cost * LV_COST[lv + 1]);
+    const gain = f.shop ? `客数×${LV_CAP[lv + 1]}・客単価×${LV_SPEND[lv + 1]}` : f.cap ? `処理 ${f.cap * LV_CAP[lv]}→${Math.round(f.cap * LV_CAP[lv + 1])}人/時` : f.comfort ? `快適さ ${f.comfort * LV_COMFORT[lv]}→${f.comfort * LV_COMFORT[lv + 1]}` : '効果アップ';
+    h += `<h3>レベルアップ</h3><div class="list"><div class="row"><div class="ic">⬆️</div><div class="bd"><b>Lv${lv + 1} にする</b>${gain}・維持費×${LV_UP[lv + 1]}</div>
+      <button class="btn" data-act="lvup" ${S.money < cost ? 'disabled' : ''}>${yen(cost)}</button></div></div>`;
+  } else h += `<p class="ok">最大レベルです</p>`;
+  h += `<h3>くわしく</h3><table class="tbl">`;
+  if (f.shop) h += `<tr><td>隣の効果</td><td>${a.parts.length ? a.parts.map(p => `${p[0]} ${typeof p[1] === 'number' ? signed(p[1]) : p[1]}`).join('<br>') : 'なし'}</td></tr>
+    <tr><td>受け入れ</td><td>1時間 ${Math.round(f.shop.cap * LV_CAP[lv])}人</td></tr>`;
+  if (f.comfort) h += `<tr><td>快適さ</td><td>+${f.comfort * LV_COMFORT[lv]}</td></tr>`;
+  h += `<tr><td>1日の維持費</td><td>${yen(f.up * LV_UP[lv])}</td></tr></table>`;
+  h += `<button class="textbtn" data-act="demolish">取り壊す（${yen(refund(b))} 戻る）</button>`;
+  openSheet(h);
+}
+function openGate(i) {
+  sel = { type: 'gate', i };
+  const lv = S.gates[i], nx = lv + 1;
+  const f = S.flights.find(f => f.gate === i && ['land', 'in', 'park', 'ready'].includes(f.st));
+  let h = `${X}<h2>${lv ? GATE_NAME[lv] : 'ゲートの予定地'}</h2><p>S は小型機、M は中型機まで、L は大型機まで止められます。大きいゲートには小さい飛行機も止まれます。</p>`;
+  if (lv) h += `<div class="stat"><div><small>いま止まっている便</small><b style="font-size:var(--body)">${f ? `${f.name}（${f.dest}）` : 'なし'}</b></div><div><small>1日の維持費</small><b>${yen(GATE_UP[lv])}</b></div></div>`;
+  if (nx <= 3) {
+    const locked = S.rank < GATE_RANK[nx];
+    h += `<h3>${lv ? '大きくする' : 'つくる'}</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">🛬</div><div class="bd"><b>${GATE_NAME[nx]}</b>${locked ? RANKS[GATE_RANK[nx]].name + 'で解放' : `${SIZE_NAME[nx]}まで・維持費 ${yen(GATE_UP[nx])}/日`}</div>
+      <button class="btn price" data-act="gate" data-v="${i}" ${locked || S.money < GATE_COST[nx] ? 'disabled' : ''}>${yen(GATE_COST[nx])}</button></div></div>`;
+  } else h += `<p class="ok">いちばん大きなゲートです</p>`;
+  openSheet(h);
+}
+function openRunway() {
+  sel = null;
+  const cur = RUNWAY[S.runway], nx = RUNWAY[S.runway + 1], ev = EVENTS[S.event] || {};
+  const need = S.contracts.reduce((a, c) => a + c.perDay * 2, 0) / 15;
+  let h = `${X}<h2>${cur.name}</h2><p>着陸と離陸で1便につき2回使います。足りないと飛行機が上空で待ち、遅れや欠航になります。</p>
+    <div class="stat"><div><small>1時間に使える回数</small><b>${ev.rwMul ? Math.round(cur.cap * ev.rwMul) : cur.cap}<small>回${ev.rwMul ? '（強風）' : ''}</small></b></div><div><small>契約から見た平均</small><b class="${need > cur.cap * .6 ? 'late' : ''}">${need.toFixed(1)}<small>回</small></b></div></div>`;
+  if (nx) {
+    const locked = S.rank < nx.rank;
+    h += `<h3>強化する</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">🛫</div><div class="bd"><b>${nx.name}</b>${locked ? RANKS[nx.rank].name + 'で解放' : `${nx.desc}。1時間 ${nx.cap}回・維持費 ${yen(nx.up)}/日`}</div>
+      <button class="btn price" data-act="runway" ${locked || S.money < nx.cost ? 'disabled' : ''}>${yen(nx.cost)}</button></div></div>`;
+  } else h += `<p class="ok">最大の滑走路です</p>`;
+  openSheet(h);
+}
+function openLand() {
+  const cost = LAND_COST[S.land];
+  if (!cost) return;
+  openSheet(`${X}<h2>土地を広げる</h2><p class="lead">ターミナルを1列広げて、建てられるマスを${COLS}つ増やします。</p>
+    <button class="btn wide" data-act="land" ${S.money < cost ? 'disabled' : ''}>${yen(cost)} で土地を買う</button>`);
+}
+function contractRow(c, act) {
+  const warns = [];
+  if (!hasGateFor(c.size)) warns.push(`${GATE_NAME[c.size]}以上が必要`);
+  if (c.intl && !cnt('ciq')) warns.push('出入国審査が必要');
+  return `<div class="row"><div class="ic" style="color:${c.color}">✈︎</div><div class="bd">
+    <b>${c.name}・${c.dest}線${c.intl ? '（国際）' : ''}</b>${SIZE_NAME[c.size]}・1日${c.perDay}便・${c.pax}人/便<br>着陸料 ${yen(c.fee)}/便
+    ${warns.length ? `<br><span class="fx ng">${warns.join('・')}</span>` : ''}</div>
+    ${act === 'accept' ? `<button class="btn price" data-act="accept" data-v="${c.id}">契約する</button>` : `<button class="btn ghost" data-act="drop" data-v="${c.id}">やめる</button>`}</div>`;
+}
+function openAir() {
+  S.seenOffers = true;
+  const load = gateLoad(), cap = RUNWAY[S.runway].cap;
+  const need = S.contracts.reduce((a, c) => a + c.perDay * 2, 0) / 15;
+  let h = `${X}<h2>航空会社</h2>
+    <div class="stat"><div><small>ゲートの混み具合</small><b class="${load > .75 ? 'ng' : load > .55 ? 'late' : 'ok'}">${pct(load)}</b>${loadMeter(load)}</div>
+    <div><small>滑走路（平均／上限）</small><b class="${need > cap * .6 ? 'late' : 'ok'}">${need.toFixed(1)}<small>／${cap}回</small></b>${loadMeter(need / cap / .8)}</div></div>
+    <p>混み具合が70%をこえると、便が重なって待ちや欠航が出やすくなります。</p>
+    <h3>新しい契約の話（毎朝入れかわります）</h3>`;
+  h += S.offers.length ? `<div class="list">${S.offers.map(o => contractRow(o, 'accept')).join('')}</div>` : '<p>きょうの話はもうありません。あしたの朝に届きます。</p>';
+  h += `<h3>契約中の路線（${S.contracts.length}）</h3>` + (S.contracts.length ? `<div class="list">${S.contracts.map(c => contractRow(c, 'drop')).join('')}</div>` : '<p>まだありません</p>');
+  h += `<p>契約をやめると評判が少し下がります。</p>`;
+  openSheet(h);
+}
+function openGoal() {
+  const p = repParts(), nx = RANKS[S.rank + 1];
+  let h = `${X}<h2>目標</h2><p class="lead">いまは「${RANKS[S.rank].name}」</p>`;
+  if (nx) {
+    const paxNow = S.last ? S.last.pax : 0;
+    h += `<h3>次のランク：${nx.name}（1日の終わりに判定）</h3><table class="tbl">
+      <tr><td>1日の旅客<small>前日の実績</small>${meter(paxNow / nx.pax)}</td><td>${num(paxNow)}<small>／${num(nx.pax)}人</small></td></tr>
+      <tr><td>評判${meter(S.rep / nx.rep)}</td><td>★${(S.rep / 20).toFixed(1)}<small>／★${(nx.rep / 20).toFixed(1)}</small></td></tr>
+      ${nx.need ? `<tr><td>${FAC[nx.need].name}がある</td><td>${cnt(nx.need) ? '<span class="ok">あり</span>' : '<span class="ng">なし</span>'}</td></tr>` : ''}</table>`;
+  } else h += `<p class="ok">最高ランクに到達しました</p>`;
+  h += `<h3>やること</h3><div class="list">`;
+  for (const m of MISSIONS) {
+    if (m.rank > S.rank) continue;
+    const done = S.missions[m.id];
+    h += `<div class="row ${done ? 'off' : ''}"><div class="ic">${done ? '✅' : '◻️'}</div><div class="bd"><b>${m.text}</b></div><span class="${done ? 'muted' : 'signc'} num">${yen(m.rw)}</span></div>`;
+  }
+  h += `</div><h3>評判の内わけ（目標 ★${(repTarget() / 20).toFixed(1)} に向かってゆっくり動きます）</h3><table class="tbl">
+    <tr><td>定時運航<small>遅れ・欠航で下がる</small>${meter(p.ontime)}</td><td>${pct(p.ontime)}</td></tr>
+    <tr><td>待ち時間<small>カウンター・出入国審査が足りないと下がる</small>${meter(p.wait)}</td><td>${pct(p.wait)}</td></tr>
+    <tr><td>快適さ<small>ベンチ・トイレ・植木など。旅客が多いほど必要</small>${meter(p.comfort)}</td><td>${pct(p.comfort)}</td></tr>
+    <tr><td>品ぞろえ<small>建物の種類が多いほど上がる</small></td><td>+${p.variety}</td></tr>
+    <tr><td>名物<small>ラウンジ・駅・展望デッキ・ホテル</small></td><td>+${p.bonus}</td></tr></table>`;
+  openSheet(h);
+}
+function openToday() {
+  const D = S.today;
+  let h = `${X}<h2>${S.day}日目 ${hhmm(S.t)}</h2>
+    <div class="stat"><div><small>きょうの収入</small><b class="signc">${yen(D.fees + D.shop)}</b></div><div><small>旅客</small><b>${num(D.pax)}<small>人</small></b></div></div>
+    <h3>内わけ</h3><table class="tbl">
+    <tr><td>着陸料</td><td>${yen(D.fees)}</td></tr><tr><td>お店・駐車場</td><td>${yen(D.shop)}</td></tr>
+    <tr><td>夜に払う維持費</td><td class="ng">−${yen(C.upkeep)}</td></tr>
+    <tr><td>着陸した便</td><td>${D.flights}便<small>定時 ${D.ontime}・遅れ ${D.late}</small></td></tr>
+    <tr><td>欠航</td><td class="${D.cancels ? 'ng' : ''}">${D.cancels}便</td></tr>
+    <tr><td>カウンター</td><td>${num(C.ccap)}人/時<small>いまの流れ ${num(S.ema.flow)}人/時</small></td></tr></table>`;
+  if (S.event) h += `<p class="late">きょうの出来事：${EVENTS[S.event].name}（${EVENTS[S.event].desc}）</p>`;
+  const shops = [];
+  for (let r = 0; r < S.land; r++) for (let c = 0; c < COLS; c++) { const b = S.grid[idx(r, c)]; if (b && FAC[b.k].shop) shops.push(b); }
+  shops.sort((a, b) => b.earn - a.earn);
+  if (shops.length) h += `<h3>よく売れているお店</h3><table class="tbl">${shops.slice(0, 5).map(b => `<tr><td>${FAC[b.k].icon} ${FAC[b.k].name}</td><td>${yen(b.earn)}</td></tr>`).join('')}</table>`;
+  openSheet(h);
+}
+function openReport(rankUp) {
+  const D = S.today, net = D.fees + D.shop - D.upkeep;
+  let h = `<h2>${S.day}日目のおわり</h2>`;
+  if (rankUp) h += `<div class="list" style="margin-top:12px"><div class="row"><div class="ic">🎉</div><div class="bd"><b>「${rankUp}」に昇格しました</b>新しい建物・ゲート・路線が使えるようになりました</div></div></div>`;
+  h += `<div class="stat"><div><small>収支</small><b class="${net >= 0 ? 'ok' : 'ng'}">${net >= 0 ? '+' : ''}${yen(net)}</b></div><div><small>旅客</small><b>${num(D.pax)}<small>人</small></b></div></div>
+    <h3>内わけ</h3><table class="tbl">
+    <tr><td>着陸料</td><td>+${yen(D.fees)}</td></tr><tr><td>お店・駐車場</td><td>+${yen(D.shop)}</td></tr>
+    <tr><td>維持費</td><td class="ng">−${yen(D.upkeep)}</td></tr>
+    <tr><td>着陸した便</td><td>${D.flights}便<small>定時 ${D.ontime}</small></td></tr>
+    <tr><td>欠航</td><td class="${D.cancels ? 'ng' : ''}">${D.cancels}便</td></tr>
+    <tr><td>評判</td><td>★${(S.rep / 20).toFixed(1)}</td></tr></table>`;
+  if (S.nextEvent) h += `<p class="late">あしたの予報：${EVENTS[S.nextEvent].name}（${EVENTS[S.nextEvent].desc}）</p>`;
+  h += `<p>航空会社から新しい契約の話が${S.offers.length}件届いています。</p>`;
+  h += `<button class="btn wide" data-act="next">${S.day + 1}日目をはじめる</button>`;
+  openSheet(h);
+}
+function openMenu() {
+  openSheet(`${X}<h2>設定</h2>
+    <div class="list" style="margin-top:12px">
+    <div class="row"><div class="ic">🔋</div><div class="bd"><b>省電力モード</b>描画を減らし、売上の数字を出しません</div>
+      <button class="btn ${lowPower ? '' : 'ghost'}" data-act="power">${lowPower ? 'オン' : 'オフ'}</button></div>
+    <div class="row"><div class="ic">❓</div><div class="bd"><b>遊び方</b></div><button class="btn ghost" data-act="help">見る</button></div></div>
+    <h3>オフライン</h3><p id="offline">確認中…</p>
+    <h3>記録</h3><table class="tbl"><tr><td>のべ旅客</td><td>${num(S.totals.pax)}人</td></tr><tr><td>のべ便数</td><td>${num(S.totals.flights)}便</td></tr></table>
+    <p>セーブは1時間ごと・建てたとき・アプリを閉じたときに自動で行います。</p>
+    <button class="textbtn" data-act="reset">最初からやり直す</button>`);
+  offlineStatus().then(([t, c]) => { const el = $('#offline'); if (el) { el.textContent = t; el.className = c; } });
+}
+async function offlineStatus() {
+  if (!('serviceWorker' in navigator)) return ['このブラウザはオフライン起動に対応していません。', 'ng'];
+  if (!window.isSecureContext) return ['無効：https のページ（GitHub Pages など）からホーム画面に追加したときだけ、機内モードで起動できます。', 'ng'];
+  let ok = false;
+  try { ok = !!navigator.serviceWorker.controller && (await caches.keys()).some(k => k.startsWith('soranominato-')); } catch (e) {}
+  return ok ? ['有効：機内モードでも起動できます。', 'ok'] : ['準備中：一度閉じて、もう一度開くと有効になります。', 'late'];
+}
+function openHelp() {
+  S.seenHelp = true; save();
+  openSheet(`${X}<h2>そらのみなと</h2>
+    <p class="lead">小さな地方空港を、世界とつながるハブ空港に育てましょう。</p>
+    <h3>1日の流れ</h3>
+    <p>空港は 6:00〜24:00 に動きます（等速で1日 約2分）。契約した路線の飛行機が着陸してゲートに止まり、お客さんを乗せて飛び立ちます。夜に維持費を払って1日が終わります。</p>
+    <h3>お金が入るところ</h3>
+    <p>着陸するたびに着陸料。ゲートに飛行機がいるあいだ、旅客がお店で買い物をします。</p>
+    <h3>気をつけること</h3>
+    <p>ゲートが空いていないと上空で待ち、90分で欠航します。滑走路は1時間に使える回数が決まっています。カウンターが足りないと行列ができ、買い物も評判も減ります。</p>
+    <h3>操作</h3>
+    <p>空き地をタップして建てる。建物・ゲート・滑走路をタップすると詳しく見たり強化したりできます。地図のすぐ下の欄には、いまやるとよいことが出ます。</p>
+    <button class="btn wide" data-act="close">はじめる</button>`);
+}
+
+// ============ 入力 ============
+cv.addEventListener('click', e => {
+  const rect = cv.getBoundingClientRect(), x = e.clientX - rect.left, y = e.clientY - rect.top;
+  if (S.dayOver) return;
+  if (y < yAp) { openRunway(); return; }
+  if (y < yTm) { openGate(clamp(Math.floor(x / cell), 0, COLS - 1)); return; }
+  const r = Math.floor((y - yTm) / cell), c = clamp(Math.floor(x / cell), 0, COLS - 1);
+  if (r >= S.land) { if (r === S.land) openLand(); return; }
+  openCell(r, c);
+});
+$('#speed').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  speed = +b.dataset.sp; if (speed) lastSpeed = speed;
+  for (const x of $('#speed').children) x.classList.toggle('on', x === b);
+  requestDraw();
+});
+document.querySelector('.bar').addEventListener('click', e => {
+  const b = e.target.closest('[data-open]'); if (!b || S.dayOver) return;
+  ({ air: openAir, goal: openGoal, today: openToday, menu: openMenu })[b.dataset.open]();
+  updateHud();
+});
+let toastTimer = 0;
+function toast(msg) {
+  const el = $('#toast'); el.textContent = msg; el.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2800);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { save(); }
+  else { lastFrame = 0; requestDraw(); }
+});
+window.addEventListener('resize', () => { layout(); requestDraw(); });
+window.addEventListener('pagehide', save);
+
+// ============ 起動 ============
+try { lowPower = localStorage.getItem(SAVE_KEY + '-lp') === '1'; } catch (e) {}
+if (!load()) newGame();
+updateHud(); layout(); requestDraw();
+if (S.dayOver) openReport(null);
+else if (!S.seenHelp) openHelp();
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
+// デバッグ用
+window.T = {
+  get S() { return S; }, C: () => C, step(n = 60) { for (let i = 0; i < n && !S.dayOver; i++) stepMinute(); requestDraw(); updateHud(); },
+  day() { while (!S.dayOver) stepMinute(); updateHud(); }, startDay, build, acceptOffer, upgradeGate, newGame, recalc,
+};
+</script>
+</body>
+</html>

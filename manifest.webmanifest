@@ -1,0 +1,13 @@
+{
+  "id": "./",
+  "name": "そらのみなと",
+  "short_name": "そらのみなと",
+  "description": "小さな地方空港をハブ空港に育てる経営シミュレーション",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1c2b",
+  "theme_color": "#0f1c2b"
+}
