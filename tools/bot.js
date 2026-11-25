@@ -4,13 +4,14 @@
 export function runBot(days, every = 5) {
   const T = window.T, W = T.api; T.newGame(); const s = T.S; const log = [];
   const TURN = [0, 50, 70, 95];
-  const free = zone => { const [a, b] = W.colRange(); for (let r = 1; r < 6; r++) if (W.zoneOf(r) === zone) for (let c = a; c <= b; c++) if (!s.grid[r * 8 + c]) return [r, c]; return null; };
+  const ZM = { land: 'p', sec: 's', air: 'd', arr: 'a' };
+  const free = (zone, k) => { const z = ZM[zone] || zone, [a, b] = W.colRange(); for (const f of z === 'a' ? [0, 1] : [1, 0]) for (let r = 0; r < 6; r++) for (let c = a; c <= b; c++) if (W.zoneAt(f, r, c) === z && W.canBuildAt(f, r, c, k)) return [f, r, c]; return null; };
   const load = e => { let need = 0; for (const c of [...s.contracts, ...(e ? [e] : [])]) need += c.perDay * (TURN[c.size] + 8); return need / (s.gates.filter(g => g).length * 900); };
   const rwNeed = e => [...s.contracts, ...(e ? [e] : [])].reduce((a, c) => a + c.perDay * 2, 0) / 15;
   const RWCAP = [0, 6, 10, 16, 28], RWCOST = [0, 0, 4000, 20000, 90000], RWR = [0, 0, 2, 3, 4];
   const GC = [0, 500, 2500, 9000];
   const C = () => W.C, cnt = k => C().counts[k] || 0, FAC = W.FAC;
-  const put = (zone, k, extra) => { const p = free(zone); if (!p || s.money < FAC[k].cost || FAC[k].rank > s.rank) return false; const m = s.money; T.build(p[0], p[1], k, extra); W.closeSheet(); return s.money < m; };
+  const put = (zone, k, extra) => { const p = free(zone, k); if (!p || s.money < FAC[k].cost || FAC[k].rank > s.rank) return false; const m = s.money; T.build(p[0], p[1], p[2], k, extra); return s.money < m; };
   const ranks = [];
   for (let d = 0; d < days; d++) {
     for (const o of [...s.offers]) if (s.gates.some(g => g >= o.size) && load(o) < .72 && rwNeed(o) < RWCAP[s.runway] * .6 && (!o.intl || cnt('ciq'))) { T.acceptOffer(o.id); W.closeSheet(); }
@@ -19,7 +20,7 @@ export function runBot(days, every = 5) {
       const lacking = s.contracts.find(c => !C().airCap[c.name]);
       if (lacking && put('land', 'checkin', { air: lacking.name })) continue;
       if ((!C().secCap || L.sec > .85) && put('sec', 'security')) continue;
-      if ((!C().bagCap || L.bag > .85) && put('sec', 'baggage')) continue;
+      if ((!C().bagCap || L.bag > .85) && put('arr', 'baggage')) continue;
       if (L.ci > .85 && put('land', s.rank >= 2 ? 'selfcheck' : 'checkin')) continue;
       if (cnt('ciq') && L.ciq > .85 && put('sec', 'ciq')) continue;
       if (rwNeed() > RWCAP[s.runway] * .5 && s.runway < 4 && s.money >= RWCOST[s.runway + 1] && s.rank >= RWR[s.runway + 1]) { s.money -= RWCOST[s.runway + 1]; s.runway++; T.recalc(); continue; }
@@ -32,7 +33,7 @@ export function runBot(days, every = 5) {
       const gi = s.gates.findIndex(g => g > 0 && g < tgt);
       if (gi >= 0 && s.money >= GC[s.gates[gi] + 1] + res * 3) { T.upgradeGate(gi); W.closeSheet(); continue; }
       const need = 2 + s.ema.flow / 40;
-      if (W.C.comfort < need && (put('land', 'toilet') || put('air', 'bench'))) continue;
+      if (W.C.comfort < need && (put('land', 'toilet') || put('air', 'bench') || put('arr', 'bench'))) continue;
       let built = false;
       for (const k of ['kiosk', 'cafe', 'souvenir', 'lounge', 'restaurant', 'deck', 'dutyfree']) if (!cnt(k) && s.money >= FAC[k].cost + res && put('air', k)) { built = true; break; }
       if (built) continue;
