@@ -28,6 +28,8 @@ Mac の `python3 -m http.server` を `http://192.168.x.x:8731` で開く方法�
 ## 開発メモ
 
 - セーブは localStorage（`soranominato-v1`）。1ゲーム時間ごと・建てたとき・閉じたときに保存。
+- 絵はすべてコードで描いたドット絵（地図は 192×259 ドットで描いて拡大）。施設の絵は `FACART`、飛行機は `PLANE` と `makePlane`。
+- localhost で開いたときは古い版が残らないよう service worker を使わない（`?sw` を付けると使う）。
 - デバッグ用に `window.T`（状態 `T.S`、`T.step(分)`、`T.day()` など）。
 - バランス確認：ブラウザのコンソールで `(await import('./tools/bot.js')).runBot(40)`。セーブを上書きします。
   いまの最短ペース（自動プレイ）：にぎわう空港 2日目・拠点空港 7日目・国際空港 14日目・ハブ空港 20日目。

@@ -102,7 +102,9 @@ button:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
 .list{background:var(--l1);border:1px solid var(--edge);border-radius:12px;overflow:hidden}
 .row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--edge)}
 .row:first-child{border-top:0}
-.row .ic{font-size:24px;width:32px;text-align:center;flex:none}
+.row .ic{font-size:24px;width:40px;text-align:center;flex:none}
+.pix{display:block;width:40px;height:40px;image-rendering:pixelated;border-radius:6px}
+.pix.big{width:56px;height:56px}
 .row .bd{flex:1;min-width:0;font-size:var(--small);line-height:1.45;color:var(--muted)}
 .row .bd b{display:block;font-size:var(--body);font-weight:500;color:var(--text)}
 .row .fx{display:inline-block;margin-top:4px;font-size:var(--meta);font-weight:500;padding:1px 8px;border-radius:6px}
@@ -606,111 +608,372 @@ function dropContract(id) {
 }
 
 // ============ 画面の大きさ ============
+// 地図は 192×259 ドットの「原寸」で描き、拡大して表示する（ドット絵）。
+// 文字やバッジは拡大後の高解像度で上に重ねる。
+const NC = 24, NRW = 44, NTX = 13, NAP = 34;
+const NW = NC * COLS, nTx = NRW, nAp = NRW + NTX, nTm = nAp + NAP, NH = nTm + NC * TROWS;
+const NTY = nTx + 6;                 // 誘導路の中心線
 const cv = $('#cv'), ctx = cv.getContext('2d');
-const st = document.createElement('canvas'), sctx = st.getContext('2d');
-let cell = 44, W = 352, H = 440, RW, TX, AP, yRw = 0, yTx, yAp, yTm, dpr = 1, staticDirty = true;
+const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+const art = mk(NW, NH), ag = art.getContext('2d');      // 動かないもの
+const fr = mk(NW, NH), fg = fr.getContext('2d');        // 毎フレーム
+let k = 2, cell = 48, W = 384, H = 518, RW, TX, AP, yRw = 0, yTx, yAp, yTm, dpr = 1, staticDirty = true;
 function layout() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
   const vw = Math.min(window.innerWidth - 16, 460);
   const other = ['.hud', '#board', '#advisor', '.bar'].reduce((a, q) => a + ($(q)?.offsetHeight || 0), 0);
   const vh = window.innerHeight - other - 60;
-  cell = Math.floor(Math.min(vw / COLS, vh / 10.3));
-  W = cell * COLS; RW = cell * 1.5; TX = cell * .55; AP = cell * 1.25;
-  yTx = RW; yAp = RW + TX; yTm = yAp + AP; H = yTm + cell * TROWS;
-  for (const c of [cv, st]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  k = Math.max(1, Math.min(vw / NW, vh / NH));
+  W = Math.floor(NW * k); H = Math.floor(NH * k); k = W / NW;
+  cell = NC * k; RW = NRW * k; TX = NTX * k; AP = NAP * k; yTx = nTx * k; yAp = nAp * k; yTm = nTm * k;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   markStatic();
 }
 function markStatic() { staticDirty = true; requestDraw(); }
-function rwY(kind) { // kind: 'a' 着陸 / 'd' 離陸
-  if (S.runway >= 4) return yRw + RW * (kind === 'a' ? .27 : .73);
-  return yRw + RW * .5;
+function rwY(kind) { return S.runway >= 4 ? (kind === 'a' ? 12 : 32) : 22; }   // 原寸の y
+function rwHalf() { return S.runway >= 4 ? 6 : [0, 6, 7, 8][S.runway]; }
+
+// ============ ドット絵の道具 ============
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+let G = ag;  // いま描いている先
+const R = (x, y, w, h, c) => { G.fillStyle = c; G.fillRect(x, y, w, h); };
+const P = (x, y, c) => { G.fillStyle = c; G.fillRect(x, y, 1, 1); };
+function noise(x, y, w, h, cols, n, seed) { const r = rng(seed); for (let i = 0; i < n; i++) P(x + Math.floor(r() * w), y + Math.floor(r() * h), cols[Math.floor(r() * cols.length)]); }
+function hline(x, y, w, c, dash = 0, gap = 0) { for (let i = 0; i < w; i++) if (!dash || (i % (dash + gap)) < dash) P(x + i, y, c); }
+function vline(x, y, h, c, dash = 0, gap = 0) { for (let i = 0; i < h; i++) if (!dash || (i % (dash + gap)) < dash) P(x, y + i, c); }
+function disc(cx, cy, r, c) { for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r + r * .6) P(cx + x, cy + y, c); }
+// 3×5 の数字（横向き＝時計回りに90°）
+const DIG = { 0: '111101101101111', 2: '111001111100111', 7: '111001001001001', 9: '111101111001111' };
+function digit(d, x, y, c, rot) {
+  const s = DIG[d];
+  for (let gy = 0; gy < 5; gy++) for (let gx = 0; gx < 3; gx++) if (s[gy * 3 + gx] === '1') {
+    if (rot === 1) P(x + 4 - gy, y + gx, c); else if (rot === -1) P(x + gy, y + 2 - gx, c); else P(x + gx, y + gy, c);
+  }
+}
+const C_ = {
+  grass: ['#4f7f3c', '#4a7838', '#55873f', '#46723a'], grassStripe: '#4c7b3a',
+  asph: '#3c4046', asph2: '#353a40', asph3: '#45494f', taxi: '#4d5258', conc: '#a7acb1', conc2: '#9ba0a6', conc3: '#b1b5ba',
+  white: '#eceff1', yellow: '#e9c440', floor: '#ddd7ca', floor2: '#d2cbbc', floor3: '#e6e1d6', wall: '#4b5562', glass: '#6f9cc0',
+};
+
+// ============ 地面・滑走路・誘導路・エプロン ============
+function drawGrass(x, y, w, h, seed) {
+  for (let i = 0; i < w; i += 12) R(x + i, y, Math.min(12, w - i), h, (i / 12) % 2 ? C_.grass[0] : C_.grassStripe);
+  noise(x, y, w, h, C_.grass, w * h / 6, seed);
+}
+function drawRunway(cy, half, num) {
+  const x0 = 4, x1 = NW - 4, top = cy - half, h = half * 2;
+  R(x0, top, x1 - x0, h, C_.asph);
+  noise(x0, top, x1 - x0, h, [C_.asph2, C_.asph3], (x1 - x0) * h / 5, 7 + cy);
+  // タイヤ痕（接地帯）
+  noise(x0 + 18, cy - 3, 34, 6, ['#2b2f34', '#30343a'], 60, 3 + cy); noise(x1 - 52, cy - 3, 34, 6, ['#2b2f34', '#30343a'], 60, 5 + cy);
+  hline(x0 + 1, top + 1, x1 - x0 - 2, C_.white); hline(x0 + 1, top + h - 2, x1 - x0 - 2, C_.white);   // 縁の線
+  for (let y = top + 3; y < top + h - 3; y += 2) { hline(x0 + 2, y, 6, C_.white); hline(x1 - 8, y, 6, C_.white); }  // 進入端の縞
+  digit(num[0], x0 + 11, cy - 5, C_.white, 1); digit(num[1], x0 + 11, cy + 1, C_.white, 1);
+  digit(num[2], x1 - 16, cy + 1, C_.white, -1); digit(num[3], x1 - 16, cy - 5, C_.white, -1);
+  for (const x of [x0 + 22, x1 - 26]) { R(x, top + 3, 4, 1, C_.white); R(x, top + h - 4, 4, 1, C_.white); }   // 接地帯標識
+  for (const x of [x0 + 32, x1 - 40]) { R(x, top + 3, 8, 2, C_.white); R(x, top + h - 5, 8, 2, C_.white); }   // 目標点標識
+  for (let x = x0 + 46; x < x1 - 50; x += 9) hline(x, cy, 5, C_.white);   // 中心線
+  P(x0, top + 1, '#3fbf5f'); P(x0, top + h - 2, '#3fbf5f'); P(x1 - 1, top + 1, '#d24a3a'); P(x1 - 1, top + h - 2, '#d24a3a');
+}
+function connector(x, yA, yB) {
+  R(x - 4, Math.min(yA, yB), 9, Math.abs(yB - yA) + 1, C_.taxi);
+  vline(x, Math.min(yA, yB), Math.abs(yB - yA) + 1, C_.yellow);
+}
+function holdShort(x, y) { hline(x - 4, y, 9, C_.yellow); hline(x - 4, y + 1, 9, C_.yellow); hline(x - 4, y + 3, 9, C_.yellow, 1, 1); hline(x - 4, y + 4, 9, C_.yellow, 1, 1); }
+function drawAirfield() {
+  drawGrass(0, 0, NW, nAp, 11);
+  // 進入灯
+  for (const y of S.runway >= 4 ? [12, 32] : [22]) for (let x = 0; x < 4; x++) P(x, y, '#d8d8c8');
+  // 誘導路
+  R(0, nTx + 2, NW, 9, C_.taxi); noise(0, nTx + 2, NW, 9, ['#474c52', '#53585e'], 260, 21);
+  hline(0, nTx + 1, NW, '#5b6066'); hline(0, nTx + 11, NW, '#5b6066');
+  const ya = rwY('a'), yd = rwY('d'), h = rwHalf();
+  connector(142, ya, NTY); connector(12, yd, NTY);
+  if (S.runway >= 2) connector(80, ya, NTY);
+  if (S.runway >= 4) { drawRunway(ya, h, '0927'); drawRunway(yd, h, '0927'); }
+  else drawRunway(ya, h, '0927');
+  holdShort(142, (S.runway >= 4 ? yd : ya) + h + 2); holdShort(12, yd + h + 2);
+  if (S.runway >= 2) holdShort(80, (S.runway >= 4 ? yd : ya) + h + 2);
+  hline(0, NTY, NW, C_.yellow);
+  // 管制塔（右上の草地）
+  const tx = 172, ty = S.runway >= 4 ? 19 : 2;
+  R(tx + 1, ty + 1, 9, 9, 'rgba(0,0,0,.25)');
+  R(tx + 2, ty, 5, 9, '#7c8794'); R(tx, ty + 2, 9, 5, '#7c8794'); R(tx + 1, ty + 1, 7, 7, '#7c8794');
+  R(tx + 2, ty + 1, 5, 7, '#2e4d6b'); R(tx + 1, ty + 2, 7, 5, '#2e4d6b');
+  P(tx + 2, ty + 2, '#a9d6f0'); P(tx + 3, ty + 1, '#a9d6f0'); R(tx + 3, ty + 3, 3, 3, '#c9ced4'); P(tx + 4, ty + 4, '#e04a3a');
+  // 吹き流し
+  const wx = 30, wy = S.runway >= 4 ? 21 : 6;
+  P(wx, wy + 1, '#555'); P(wx, wy + 2, '#555'); hline(wx + 1, wy, 2, '#f07a2a'); hline(wx + 3, wy, 2, '#f4f4f4'); hline(wx + 5, wy, 1, '#f07a2a');
+}
+function drawApron() {
+  R(0, nAp, NW, NAP, C_.conc);
+  noise(0, nAp, NW, NAP, [C_.conc2, C_.conc3], 700, 31);
+  for (let x = 0; x < NW; x += 8) vline(x, nAp, NAP, C_.conc2);
+  for (let y = nAp + 8; y < nTm; y += 8) hline(0, y, NW, C_.conc2);
+  hline(0, nAp + 1, NW, '#c9473f', 2, 2);   // 機材の置き場の線
+  for (let i = 0; i < COLS; i++) {
+    const gx = i * NC + 12, lv = S.gates[i];
+    if (lv > 0) {
+      vline(gx, NTY, nTm - 4 - NTY, C_.yellow);                 // 誘導線
+      hline(gx - 2, nTm - 4, 5, C_.yellow);                     // 停止線
+      // 搭乗橋（ロタンダ・トンネル・キャブ）
+      R(gx + 3, nTm - 9, 8, 2, '#c3c8ce'); hline(gx + 3, nTm - 10, 8, '#8e959d'); hline(gx + 3, nTm - 7, 8, '#8e959d');
+      R(gx + 9, nTm - 7, 2, 4, '#c3c8ce'); R(gx + 8, nTm - 4, 4, 3, '#6a7079'); P(gx + 9, nTm - 4, '#9aa1a9');
+      R(gx + 2, nTm - 10, 2, 4, '#7d848c');
+    } else {
+      for (let x = gx - 10; x <= gx + 10; x += 2) { P(x, nAp + 4, 'rgba(255,255,255,.5)'); P(x, nTm - 4, 'rgba(255,255,255,.5)'); }
+      for (let y = nAp + 4; y <= nTm - 4; y += 2) { P(gx - 10, y, 'rgba(255,255,255,.5)'); P(gx + 10, y, 'rgba(255,255,255,.5)'); }
+    }
+  }
+  // ターミナルのガラス壁
+  R(0, nTm - 2, NW, 2, '#3c5a76'); for (let x = 0; x < NW; x += 4) P(x, nTm - 2, '#8fb6d4');
+}
+function drawTerminalFloor() {
+  for (let r = 0; r < TROWS; r++) {
+    const y = nTm + r * NC;
+    if (r < S.land) {
+      R(0, y, NW, NC, C_.floor); noise(0, y, NW, NC, [C_.floor2, C_.floor3], 500, 41 + r);
+      for (let x = 0; x < NW; x += 12) vline(x, y, NC, C_.floor2);
+      hline(0, y, NW, C_.floor2); hline(0, y + 12, NW, C_.floor2);
+    } else drawGrass(0, y, NW, NC, 51 + r);
+  }
+  if (S.land < TROWS) {   // 外壁とフェンス
+    const y = nTm + S.land * NC;
+    hline(0, y - 1, NW, C_.wall); hline(0, y + 2, NW, '#8a9099', 1, 1);
+    for (let x = 0; x < NW; x += 8) vline(x, y + 1, 3, '#6d737b');
+  }
+  vline(0, nTm, S.land * NC, C_.wall); vline(NW - 1, nTm, S.land * NC, C_.wall);
 }
 
-// ============ 描画（動かないもの） ============
-function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
-function drawRunway(g, cy, h) {
-  g.fillStyle = '#3a3f46'; g.fillRect(cell * .15, cy - h / 2, W - cell * .3, h);
-  g.fillStyle = '#e8e8e8';
-  for (let x = cell * .9; x < W - cell * .9; x += cell * .7) g.fillRect(x, cy - 1, cell * .38, 2);
-  for (let i = 0; i < 4; i++) {
-    const yy = cy - h / 2 + h * (.12 + i * .22);
-    g.fillRect(cell * .25, yy, cell * .3, h * .1); g.fillRect(W - cell * .55, yy, cell * .3, h * .1);
+// ============ 施設（24×24 ドット） ============
+const T_ = 24;
+function walls(c = C_.wall) {   // 3方の壁と入口
+  hline(0, 0, T_, c); vline(0, 0, T_, c); vline(T_ - 1, 0, T_, c);
+  hline(0, T_ - 1, 8, c); hline(T_ - 8, T_ - 1, 8, c);
+  hline(8, T_ - 1, 8, '#9fc4dc');   // ガラスの入口
+}
+function terrazzo(seed) { R(0, 0, T_, T_, C_.floor); noise(0, 0, T_, T_, [C_.floor2, C_.floor3], 70, seed); hline(0, 12, T_, C_.floor2); vline(12, 0, T_, C_.floor2); }
+function person(x, y, c, r) { P(x, y, '#3a2a20'); P(x, y + 1, c); P(x + (r ? 1 : 0), y + 1, c); }
+const PEOPLE = ['#d9534f', '#3e7cc7', '#e8a23a', '#5aa469', '#8e6bbf', '#2d3e50', '#e57399'];
+const FACART = {
+  counter() {
+    terrazzo(1);
+    R(1, 1, 22, 2, '#3c66b4'); P(4, 1, '#fff'); P(12, 1, '#fff'); P(19, 1, '#fff');   // 航空会社の看板
+    R(1, 3, 22, 3, '#4a4f58'); for (let x = 2; x < 23; x += 2) vline(x, 3, 3, '#5d636d');   // 手荷物ベルト
+    for (const x of [2, 9, 16]) { R(x, 6, 6, 3, '#b89b6e'); hline(x, 8, 6, '#7e6544'); R(x + 1, 6, 2, 1, '#1e2630'); person(x + 4, 4, '#2f4b7c'); }
+    for (const y of [12, 15, 18]) hline(3, y, 18, '#3f6fd1');
+    for (const [x, y] of [[3, 12], [20, 12], [3, 15], [20, 15], [3, 18], [20, 18], [11, 12], [11, 15], [11, 18]]) P(x, y, '#2a2e35');
+    vline(20, 12, 3, '#3f6fd1'); vline(3, 15, 3, '#3f6fd1');
+    const r = rng(9); for (let i = 0; i < 6; i++) person(5 + Math.floor(r() * 14), 13 + 3 * Math.floor(r() * 3), PEOPLE[i % 7]);
+  },
+  bench() {
+    terrazzo(2);
+    for (const y of [5, 15]) {
+      hline(2, y + 2, 20, '#3a3f47');
+      for (let x = 2; x < 22; x += 3) { R(x, y, 2, 2, '#3d6eb0'); P(x, y, '#5d8fd0'); R(x, y + 3, 2, 2, '#3d6eb0'); P(x, y + 4, '#2c5590'); }
+    }
+    person(8, 15, '#d9534f', 1); person(17, 5, '#5aa469', 1); R(12, 11, 3, 2, '#8e3b3b'); P(12, 11, '#b85a5a');
+  },
+  plant() {
+    terrazzo(3);
+    disc(12, 13, 9, 'rgba(0,0,0,.15)'); disc(12, 12, 9, '#7a746a'); disc(12, 12, 8, '#5a3f2c');
+    disc(11, 11, 7, '#2f6b35'); disc(9, 9, 4, '#3f8a3f'); disc(14, 13, 4, '#3f8a3f'); disc(9, 8, 2, '#5aa84a'); disc(14, 11, 2, '#5aa84a');
+    P(8, 7, '#7cc35e'); P(13, 10, '#7cc35e'); P(16, 15, '#7cc35e');
+  },
+  toilet() {
+    R(0, 0, T_, T_, '#cfe3ea'); for (let i = 0; i < T_; i += 4) { hline(0, i, T_, '#bdd5de'); vline(i, 0, T_, '#bdd5de'); }
+    walls();
+    for (let x = 1; x < 23; x += 5) vline(x, 1, 7, '#7d8a96'); hline(1, 8, 22, '#7d8a96', 3, 2);
+    for (let x = 3; x < 23; x += 5) { R(x, 3, 2, 3, '#f4f6f7'); P(x, 3, '#c8d0d6'); }
+    R(2, 14, 8, 3, '#e9edf0'); P(3, 15, '#9fb8c6'); P(6, 15, '#9fb8c6');
+    vline(12, 10, 10, '#7d8a96');
+    R(15, 15, 3, 5, '#2f6db5'); R(19, 15, 3, 5, '#d24a4a'); P(16, 15, '#fff'); P(20, 15, '#fff');
+  },
+  kiosk() {
+    R(0, 0, T_, T_, '#eef0f1'); for (let i = 0; i < T_; i += 6) { hline(0, i, T_, '#e1e4e6'); vline(i, 0, T_, '#e1e4e6'); }
+    walls('#5a4a3c'); R(1, 1, 22, 2, '#f28c28'); P(5, 1, '#fff'); P(6, 1, '#fff');
+    R(20, 3, 3, 16, '#7fc3e8'); for (let y = 4; y < 19; y += 3) hline(20, y, 3, '#5aa4cf');
+    const r = rng(5), cs = ['#e05a5a', '#f4c542', '#4caf7a', '#3e7cc7', '#f28c28', '#c06ad6'];
+    for (const x of [3, 9, 15]) { R(x, 5, 3, 10, '#9aa3ad'); for (let y = 5; y < 15; y++) { P(x, y, cs[Math.floor(r() * 6)]); P(x + 2, y, cs[Math.floor(r() * 6)]); } }
+    R(3, 18, 9, 3, '#6b5a48'); hline(3, 18, 9, '#8d7a64'); R(5, 18, 2, 1, '#2a2e35'); person(8, 15, '#3e7cc7');
+  },
+  parking() {
+    R(0, 0, T_, T_, '#4b4f55'); noise(0, 0, T_, T_, ['#44484e', '#53575d'], 60, 6);
+    for (const y0 of [1, 14]) for (let x = 0; x <= 24; x += 6) vline(x, y0, 9, C_.white);
+    hline(0, 12, T_, C_.yellow, 2, 2);
+    const r = rng(8), cs = ['#c8323a', '#e9edf0', '#2d5aa0', '#2b2f35', '#9aa3ad', '#e8b23a'];
+    for (const y0 of [2, 15]) for (let x = 1; x < 24; x += 6) if (r() < .8) {
+      const c = cs[Math.floor(r() * 6)]; R(x + 1, y0, 4, 7, c); R(x + 1, y0 + 2, 4, 2, '#24384f'); P(x + 1, y0 + 6, '#24384f'); P(x + 4, y0 + 6, '#24384f');
+    }
+  },
+  cafe() {
+    for (let y = 0; y < T_; y += 3) R(0, y, T_, 3, (y / 3) % 2 ? '#a8794f' : '#9e7049');
+    for (let y = 0; y < T_; y += 3) P((y * 7) % 24, y, '#7d5636');
+    walls('#4a3426');
+    R(1, 1, 22, 4, '#5a3b28'); hline(1, 4, 22, '#3e281b'); R(3, 1, 3, 2, '#c0c6cc'); P(4, 1, '#e04a3a'); R(9, 1, 6, 2, '#d8eef6'); P(10, 2, '#f2b5c4'); P(12, 2, '#f4d28a');
+    for (const [x, y] of [[5, 9], [15, 9], [5, 16], [15, 16]]) {
+      disc(x, y, 1, '#f1ede4'); P(x - 3, y, '#6b4a33'); P(x + 3, y, '#6b4a33'); P(x, y - 3, '#6b4a33');
+    }
+    person(2, 15, '#3e7cc7'); person(18, 8, '#e57399');
+  },
+  souvenir() {
+    for (let y = 0; y < T_; y += 3) R(0, y, T_, 3, (y / 3) % 2 ? '#c49a6c' : '#bb9163');
+    walls('#5a4030'); R(1, 1, 22, 2, '#b8325a');
+    const r = rng(4), cs = ['#e05a5a', '#f2a3b5', '#f4c542', '#f7f1e3', '#7cc35e'];
+    for (let x = 2; x < 22; x++) { P(x, 3, cs[Math.floor(r() * 5)]); P(x, 4, cs[Math.floor(r() * 5)]); }
+    for (let y = 5; y < 20; y++) { P(1, y, cs[Math.floor(r() * 5)]); P(22, y, cs[Math.floor(r() * 5)]); }
+    R(7, 9, 10, 6, '#7a5236'); for (let x = 8; x < 16; x += 2) for (let y = 10; y < 14; y += 2) R(x, y, 2, 2, cs[Math.floor(r() * 5)]);
+    R(3, 18, 5, 2, '#5a4030'); person(13, 17, '#5aa469'); person(18, 7, '#8e6bbf');
+  },
+  lounge() {
+    R(0, 0, T_, T_, '#3d3566'); for (let y = 1; y < T_; y += 4) for (let x = (y % 8 ? 1 : 3); x < T_; x += 4) P(x, y, '#4a4180');
+    walls('#2a2440'); R(1, 1, 22, 3, '#2a2440'); for (let x = 3; x < 22; x += 3) P(x, 1, ['#c9a227', '#7fc3e8', '#e05a5a'][x % 3]);
+    R(3, 7, 7, 2, '#c7b8a0'); R(3, 9, 2, 5, '#c7b8a0'); hline(3, 7, 7, '#e2d6c2');
+    R(14, 7, 7, 2, '#c7b8a0'); R(19, 9, 2, 5, '#c7b8a0'); hline(14, 7, 7, '#e2d6c2');
+    R(7, 11, 3, 2, '#9fc4dc'); R(14, 11, 3, 2, '#9fc4dc');
+    R(3, 17, 7, 2, '#c7b8a0'); R(14, 17, 7, 2, '#c7b8a0');
+    disc(21, 20, 1, '#3f8a3f'); disc(2, 20, 1, '#3f8a3f'); person(5, 10, '#2d3e50'); person(16, 16, '#e8a23a');
+  },
+  restaurant() {
+    for (let y = 0; y < T_; y += 3) for (let x = 0; x < T_; x += 3) R(x, y, 3, 3, (x + y) % 6 ? '#c86b4a' : '#b85f40');
+    walls('#3b2a22');
+    R(1, 1, 22, 4, '#b8bec5'); hline(1, 4, 22, '#8a9098'); for (let x = 3; x < 22; x += 5) P(x, 2, '#e04a3a');
+    R(8, 22, 8, 1, '#2e3a6b'); for (let x = 9; x < 16; x += 2) P(x, 22, '#e8ecf2');
+    for (const [x, y] of [[3, 8], [14, 8], [3, 15], [14, 15]]) {
+      R(x, y, 6, 3, '#f5f1e8'); hline(x, y + 3, 6, '#d7d0c0'); hline(x + 1, y - 1, 4, '#4a2f22', 1, 1); hline(x + 1, y + 4, 4, '#4a2f22', 1, 1);
+    }
+    person(5, 6, '#3e7cc7'); person(16, 13, '#d9534f');
+  },
+  station() {
+    R(0, 0, T_, T_, '#b9b5ad'); noise(0, 0, T_, T_, ['#aeaaa2', '#c4c0b8'], 40, 12);
+    hline(0, 7, T_, C_.yellow); hline(0, 17, T_, C_.yellow);
+    R(0, 8, T_, 9, '#7a746b'); for (let x = 0; x < T_; x += 2) vline(x, 8, 9, '#6a4e36');
+    hline(0, 9, T_, '#9aa1a9'); hline(0, 15, T_, '#9aa1a9');
+    R(0, 9, T_, 7, '#e8ecef'); hline(0, 12, T_, '#2c62b8'); for (let x = 3; x < T_; x += 6) R(x, 10, 3, 1, '#a8b4c0');
+    vline(0, 9, 7, '#9aa1a9'); vline(12, 9, 7, '#c9ced4');
+    R(3, 2, 6, 2, '#3d6eb0'); R(15, 20, 6, 2, '#3d6eb0'); person(17, 3, '#5aa469'); person(6, 19, '#e8a23a');
+  },
+  deck() {
+    for (let x = 0; x < T_; x += 3) R(x, 0, 3, T_, (x / 3) % 2 ? '#b88a57' : '#ad7f4e');
+    hline(0, 0, T_, '#8f98a2'); hline(0, 1, T_, '#c3c8ce'); for (let x = 1; x < T_; x += 4) P(x, 2, '#8f98a2');
+    for (const x of [5, 17]) { R(x, 4, 2, 3, '#4a5562'); P(x, 4, '#2a2e35'); P(x + 1, 7, '#6d737b'); }
+    R(3, 15, 7, 2, '#7a5236'); R(14, 15, 7, 2, '#7a5236');
+    person(9, 4, '#3e7cc7'); person(13, 5, '#d9534f'); person(20, 9, '#e8a23a');
+  },
+  ciq() {
+    terrazzo(13);
+    R(1, 1, 22, 2, '#f2c94c'); for (let x = 3; x < 22; x += 6) R(x, 1, 2, 2, '#222');
+    for (const x of [2, 9, 16]) { R(x, 5, 6, 5, '#4a5868'); R(x + 1, 6, 4, 3, '#9fd3e8'); P(x + 2, 7, '#2d3e50'); }
+    for (const x of [8, 15]) vline(x, 11, 10, '#2a2e35', 1, 1);
+    const r = rng(14); for (let i = 0; i < 5; i++) person(3 + Math.floor(r() * 3) * 7, 12 + Math.floor(r() * 4) * 2, PEOPLE[(i + 2) % 7]);
+  },
+  dutyfree() {
+    R(0, 0, T_, T_, '#ece8e4'); for (let i = 0; i < 6; i++) { const r = rng(20 + i); let x = Math.floor(r() * 24), y = Math.floor(r() * 24); for (let j = 0; j < 6; j++) { P(x, y, '#d9d2cc'); x++; y += r() < .5 ? 1 : 0; } }
+    walls('#3b2a55'); R(1, 1, 22, 2, '#6a3fa0'); P(11, 1, '#d4af37'); P(12, 1, '#d4af37');
+    for (const [x, y] of [[4, 6], [14, 6], [4, 14], [14, 14]]) {
+      R(x, y, 6, 4, '#f7f3ee'); hline(x, y, 6, '#d4af37'); hline(x, y + 3, 6, '#d4af37'); vline(x, y, 4, '#d4af37'); vline(x + 5, y, 4, '#d4af37');
+      P(x + 2, y + 1, '#b388ff'); P(x + 3, y + 2, '#ff80ab'); P(x + 1, y + 2, '#80deea');
+    }
+    person(11, 11, '#2d3e50'); person(20, 18, '#e57399');
+  },
+  hotel() {
+    R(0, 0, T_, T_, '#8e8a83'); noise(0, 0, T_, T_, ['#86827b', '#97938c'], 50, 15);
+    hline(0, 0, T_, '#6e6a63'); hline(0, T_ - 1, T_, '#6e6a63'); vline(0, 0, T_, '#6e6a63'); vline(T_ - 1, 0, T_, '#6e6a63');
+    R(3, 3, 12, 9, '#cfc6b4'); R(4, 4, 10, 7, '#3d9ad8'); hline(5, 5, 4, '#8fd3f5'); hline(8, 8, 4, '#8fd3f5');
+    for (const x of [4, 8, 12]) R(x, 13, 2, 3, '#f4f4f4');
+    R(17, 3, 4, 4, '#b5b9be'); disc(19, 5, 1, '#7d848c'); R(17, 9, 4, 4, '#b5b9be'); disc(19, 11, 1, '#7d848c');
+    R(3, 18, 18, 3, '#2a2e35'); for (let x = 4; x < 20; x += 3) R(x, 19, 2, 1, '#e8c547');
+  },
+};
+const facCache = {};
+function facSprite(key) {
+  if (facCache[key]) return facCache[key];
+  const c = mk(T_, T_), prev = G; G = c.getContext('2d'); FACART[key](); G = prev;
+  return (facCache[key] = c);
+}
+const iconCache = {};
+function facIcon(key) { return iconCache[key] ||= facSprite(key).toDataURL(); }
+function drawBuildings() {
+  for (let r = 0; r < S.land; r++) for (let c = 0; c < COLS; c++) {
+    const b = S.grid[idx(r, c)]; if (!b) continue;
+    G.drawImage(facSprite(b.k), c * NC, nTm + r * NC);
   }
 }
 function drawStatic() {
-  const g = sctx; g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = '#3d6b47'; g.fillRect(0, 0, W, H);
-  // 滑走路
-  if (S.runway >= 4) { drawRunway(g, rwY('a'), RW * .3); drawRunway(g, rwY('d'), RW * .3); }
-  else drawRunway(g, rwY('a'), RW * (S.runway >= 3 ? .46 : S.runway >= 2 ? .42 : .38));
-  // 誘導路
-  const ty = yTx + TX / 2;
-  g.fillStyle = '#545b64'; g.fillRect(0, yTx + TX * .18, W, TX * .64);
-  g.fillRect(W * .74 - cell * .18, rwY('a'), cell * .36, ty - rwY('a'));
-  g.fillRect(cell * .5 - cell * .18, rwY('d'), cell * .36, ty - rwY('d'));
-  if (S.runway >= 2) g.fillRect(W * .42 - cell * .18, rwY('a'), cell * .36, ty - rwY('a'));
-  g.strokeStyle = '#e8c547'; g.lineWidth = 1.5; g.setLineDash([]);
-  g.beginPath(); g.moveTo(0, ty); g.lineTo(W, ty); g.stroke();
-  // エプロン
-  g.fillStyle = '#8f98a3'; g.fillRect(0, yAp, W, AP);
-  for (let i = 0; i < COLS; i++) {
-    const gx = (i + .5) * cell, lv = S.gates[i];
-    if (lv > 0) {
-      g.strokeStyle = '#f2d14b'; g.lineWidth = 1.5;
-      g.beginPath(); g.moveTo(gx, ty); g.lineTo(gx, yAp + AP * .85); g.stroke();
-      g.fillStyle = '#c9ced6'; g.fillRect(gx + cell * .18, yAp + AP * .55, cell * .14, AP * .45);
-      g.fillStyle = '#1d2733'; g.font = `600 ${Math.max(12, Math.round(cell * .26))}px -apple-system,sans-serif`;
-      g.textAlign = 'left'; g.textBaseline = 'bottom';
-      g.fillText(['', 'S', 'M', 'L'][lv], i * cell + 3, yAp + AP - 2);
-    } else {
-      g.strokeStyle = 'rgba(255,255,255,.35)'; g.setLineDash([4, 4]); g.lineWidth = 1;
-      g.strokeRect(i * cell + 4, yAp + 6, cell - 8, AP - 12); g.setLineDash([]);
-      g.fillStyle = 'rgba(255,255,255,.45)'; g.font = `${Math.round(cell * .4)}px -apple-system,sans-serif`;
-      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('+', (i + .5) * cell, yAp + AP / 2);
-    }
-  }
-  // ターミナルの床
-  for (let r = 0; r < TROWS; r++) for (let c = 0; c < COLS; c++) {
-    const x = c * cell, y = yTm + r * cell;
-    if (r < S.land) { g.fillStyle = (r + c) % 2 ? '#e6dfcf' : '#ded6c4'; g.fillRect(x, y, cell, cell); }
-    else { g.fillStyle = (r + c) % 2 ? '#365f40' : '#33593c'; g.fillRect(x, y, cell, cell); }
-  }
-  g.fillStyle = '#5a6b7d'; g.fillRect(0, yTm - 3, W, 3);
-  if (S.land < TROWS) {
-    const y = yTm + S.land * cell;
-    g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, y, W, cell);
-    g.fillStyle = '#ffcd1c'; g.font = `500 ${Math.max(13, Math.round(cell * .3))}px -apple-system,sans-serif`;
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(`🔒 土地を広げる ${yen(LAND_COST[S.land])}`, W / 2, y + cell / 2);
-  }
-  // 建物
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  for (let r = 0; r < S.land; r++) for (let c = 0; c < COLS; c++) {
-    const b = S.grid[idx(r, c)]; if (!b) continue;
-    const f = FAC[b.k], x = c * cell, y = yTm + r * cell;
-    g.fillStyle = f.color; rr(g, x + 2.5, y + 2.5, cell - 5, cell - 5, cell * .18); g.fill();
-    g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 1; g.stroke();
-    g.fillStyle = 'rgba(255,255,255,.14)'; rr(g, x + 2.5, y + 2.5, cell - 5, (cell - 5) * .45, cell * .18); g.fill();
-    g.font = `${Math.round(cell * .5)}px -apple-system,"Apple Color Emoji",sans-serif`;
-    g.fillStyle = '#fff'; g.fillText(f.icon, x + cell / 2, y + cell / 2 + 1);
-    const lv = lvOf(b);
-    if (lv > 1) { g.fillStyle = '#ffcd1c'; for (let i = 0; i < lv; i++) { g.beginPath(); g.arc(x + 8 + i * 7, y + cell - 8, 2.5, 0, Math.PI * 2); g.fill(); } }
-    if (f.shop) {
-      const m = adjInfo(r, c, b.k).mul;
-      if (Math.abs(m - 1) > .01) {
-        g.font = `600 ${Math.max(12, Math.round(cell * .24))}px -apple-system,sans-serif`;
-        g.fillStyle = m > 1 ? '#bff5c9' : '#ffc1c1';
-        g.textAlign = 'right'; g.textBaseline = 'top';
-        g.fillText((m > 1 ? '+' : '') + Math.round((m - 1) * 100) + '%', x + cell - 4, y + 3);
-        g.textAlign = 'center'; g.textBaseline = 'middle';
-      }
-    }
-  }
+  G = ag; ag.clearRect(0, 0, NW, NH);
+  drawAirfield(); drawApron(); drawTerminalFloor(); drawBuildings();
   staticDirty = false;
 }
 
-// ============ 描画（動くもの） ============
+// ============ 飛行機（右向きを作って90°ずつ回す） ============
+const PLANE = [null,
+  { len: 17, span: 19, fw: 3, wingX: 10, root: 3, tip: 2, sweep: 0, eng: [{ d: 4, len: 3, w: 1, prop: 1 }], stabX: 3, stabHalf: 4, stabSweep: .25, fin: 4 },
+  { len: 22, span: 21, fw: 3, wingX: 13, root: 5, tip: 2, sweep: .6, eng: [{ d: 4, len: 3, w: 2 }], stabX: 4, stabHalf: 5, stabSweep: .6, fin: 5 },
+  { len: 30, span: 27, fw: 5, wingX: 18, root: 7, tip: 2, sweep: .65, eng: [{ d: 5, len: 4, w: 2 }, { d: 9, len: 3, w: 2 }], stabX: 5, stabHalf: 7, stabSweep: .6, fin: 7 },
+];
+function makePlane(size, livery) {
+  const p = PLANE[size], w = p.len, h = p.span, cy = (h - 1) / 2, half = cy, r = (p.fw - 1) / 2;
+  const body = mk(w, h), lights = mk(w, h), prev = G;
+  G = body.getContext('2d');
+  const le = d => Math.round(p.wingX - p.sweep * d);
+  // 主翼
+  for (let d = 0; d <= half; d++) {
+    const ch = Math.max(1, Math.round(p.root + (p.tip - p.root) * d / half));
+    for (let i = 0; i < ch; i++) { const c = i === ch - 1 && ch > 2 ? '#a3aab3' : i === 0 ? '#e4e8ec' : '#cdd2d8'; P(le(d) - i, cy - d, c); P(le(d) - i, cy + d, c); }
+  }
+  // エンジン
+  for (const e of p.eng) for (const s of [-1, 1]) {
+    for (let j = 0; j < e.w; j++) {
+      const y = cy + s * (e.d + j);
+      for (let i = 0; i < e.len; i++) P(le(e.d) + 1 - i, y, i === 0 ? '#2b2f36' : '#69707b');
+    }
+    if (e.prop) { const x = le(e.d) + 2; P(x, cy + s * (e.d - 1), '#b9bec4'); P(x, cy + s * e.d, '#8a9098'); P(x, cy + s * (e.d + 1), '#b9bec4'); }
+  }
+  // 水平尾翼
+  for (let d = 0; d <= p.stabHalf; d++) {
+    const x = Math.round(p.stabX - p.stabSweep * d), ch = d < p.stabHalf - 1 ? 2 : 1;
+    for (let i = 0; i < ch; i++) { P(x - i, cy - d, '#cdd2d8'); P(x - i, cy + d, '#cdd2d8'); }
+  }
+  // 胴体
+  for (let x = 0; x < w; x++) {
+    let rr = r;
+    if (x === 0) rr = 0; else if (x === w - 1) rr = 0; else if (x === w - 2 && r > 1) rr = r - 1; else if (x === 1 && r > 1) rr = r - 1;
+    for (let y = -rr; y <= rr; y++) P(x, cy + y, y === -rr && rr ? '#ffffff' : y === rr && rr ? '#d3d8de' : '#f2f4f6');
+  }
+  for (let x = 2; x < w - 3; x++) P(x, cy + r, livery);            // 胴体の帯
+  for (let x = 0; x < p.fin; x++) P(x, cy, livery);                 // 垂直尾翼
+  P(0, cy, livery);
+  P(w - 2, cy - r, '#22344a'); P(w - 2, cy + r, '#22344a'); if (r > 1) { P(w - 3, cy - r, '#22344a'); P(w - 3, cy + r, '#22344a'); }  // 操縦席の窓
+  // 夜の灯火（左翼端 赤・右翼端 緑・尾部 白・胴体上 赤）
+  G = lights.getContext('2d');
+  P(le(half), 0, '#ff3b30'); P(le(half), h - 1, '#34c759'); P(0, cy, '#ffffff'); P(Math.round(w / 2), cy, '#ff3b30');
+  G = prev;
+  return { body, lights, w, h };
+}
+function rot(src, dir) {   // dir 0 右・1 下・2 左・3 上
+  const sw = dir % 2 ? src.height : src.width, sh = dir % 2 ? src.width : src.height, c = mk(sw, sh), g = c.getContext('2d');
+  g.translate(sw / 2, sh / 2); g.rotate(dir * Math.PI / 2); g.drawImage(src, -src.width / 2, -src.height / 2);
+  return c;
+}
+function silhouette(src) { const c = mk(src.width, src.height), g = c.getContext('2d'); g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); return c; }
+const planeCache = {};
+function planeSprite(size, color, dir) {
+  const key = size + color + dir;
+  if (planeCache[key]) return planeCache[key];
+  const base = planeCache[size + color] ||= makePlane(size, color);
+  const body = rot(base.body, dir);
+  return (planeCache[key] = { body, lights: rot(base.lights, dir), shadow: silhouette(body) });
+}
+function planeIcon(size, color) {
+  const key = 'i' + size + color;
+  if (iconCache[key]) return iconCache[key];
+  const s = planeSprite(size, color, 3).body, c = mk(32, 32);
+  c.getContext('2d').drawImage(s, Math.round((32 - s.width) / 2), Math.round((32 - s.height) / 2));
+  return (iconCache[key] = c.toDataURL());
+}
+const dirOf = ang => { const a = ((Math.round(ang / (Math.PI / 2)) % 4) + 4) % 4; return a; };
 function along(pts, p) {
   let total = 0; const seg = [];
   for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i-1][0], pts[i][1] - pts[i-1][1]); seg.push(d); total += d; }
@@ -718,95 +981,122 @@ function along(pts, p) {
   for (let i = 0; i < seg.length; i++) {
     if (d <= seg[i] || i === seg.length - 1) {
       const q = seg[i] ? d / seg[i] : 1, a = pts[i], b = pts[i + 1];
-      return { x: lerp(a[0], b[0], q), y: lerp(a[1], b[1], q), ang: Math.atan2(b[1] - a[1], b[0] - a[0]), seg: i };
+      return { x: lerp(a[0], b[0], q), y: lerp(a[1], b[1], q), dir: dirOf(Math.atan2(b[1] - a[1], b[0] - a[0])), seg: i };
     }
     d -= seg[i];
   }
 }
-function planePos(f, tt) {
-  const el = tt - f.t0, gx = (f.gate + .5) * cell, py = yAp + AP * .42, ty = yTx + TX / 2;
+function parkedY(f) { return nTm - 3 - (PLANE[f.size].len - 1) / 2; }   // 機首を建物に向けて止まる
+function planePos(f, tt) {   // 原寸の座標
+  const el = tt - f.t0, gx = f.gate * NC + 12, py = parkedY(f);
   const ya = rwY('a'), yd = rwY('d');
-  if (f.st === 'land') {
-    const p = clamp(el / 3, 0, 1), e = 1 - (1 - p) ** 2;
-    return { x: lerp(-cell * 1.5, W * .74, e), y: ya, ang: 0, sc: 1 + (1 - p) * .35, air: 1 - p };
-  }
-  if (f.st === 'in') {
-    const q = along([[W * .74, ya], [W * .74, ty], [gx, ty], [gx, py]], el / 3);
-    return { ...q, sc: 1 };
-  }
-  if (f.st === 'park' || f.st === 'ready') return { x: gx, y: py, ang: Math.PI / 2, sc: 1 };
+  if (f.st === 'land') { const p = clamp(el / 3, 0, 1), e = 1 - (1 - p) ** 2; return { x: lerp(-30, 142, e), y: ya, dir: 0, air: (1 - p) ** 1.5 }; }
+  if (f.st === 'in') return along([[142, ya], [142, NTY], [gx, NTY], [gx, py]], el / 3);
+  if (f.st === 'park' || f.st === 'ready') return { x: gx, y: py, dir: 1 };
   if (f.st === 'out') {
-    const q = along([[gx, py], [gx, ty], [cell * .5, ty], [cell * .5, yd], [cell * .9, yd]], el / 3);
-    if (q.seg === 0) q.ang = Math.PI / 2; // 押し出し（後ろ向き）
-    return { ...q, sc: 1 };
+    const q = along([[gx, py], [gx, NTY], [12, NTY], [12, yd], [22, yd]], el / 3);
+    if (q.seg === 0) { q.dir = 1; q.push = 1; }   // 押し出し（後ろ向き）
+    return q;
   }
-  if (f.st === 'tko') {
-    const p = clamp(el / 2, 0, 1), e = p * p;
-    return { x: lerp(cell * .9, W + cell * 2, e), y: yd - e * cell * .3, ang: -e * .15, sc: 1 + e * .45, air: e };
-  }
+  if (f.st === 'tko') { const p = clamp(el / 2, 0, 1), e = p * p; return { x: lerp(22, NW + 40, e), y: yd, dir: 0, air: e }; }
   return null;
 }
-function drawPlane(g, x, y, ang, size, color, sc, air) {
-  const L = cell * [0, .55, .75, .98][size] * sc;
-  if (air > 0) { // 影
-    g.save(); g.translate(x + air * cell * .5, y + air * cell * .6); g.rotate(ang); g.fillStyle = 'rgba(0,0,0,.18)';
-    g.beginPath(); g.ellipse(0, 0, L / 2, L * .1, 0, 0, Math.PI * 2); g.fill(); g.restore();
-  }
-  g.save(); g.translate(x, y); g.rotate(ang);
-  g.fillStyle = '#f4f6f8';
-  g.beginPath(); // 主翼
-  g.moveTo(L * .08, 0); g.lineTo(-L * .12, -L * .46); g.lineTo(-L * .22, -L * .46); g.lineTo(-L * .1, 0);
-  g.lineTo(-L * .22, L * .46); g.lineTo(-L * .12, L * .46); g.closePath(); g.fill();
-  g.fillStyle = color; // 尾翼
-  g.beginPath(); g.moveTo(-L * .36, 0); g.lineTo(-L * .48, -L * .19); g.lineTo(-L * .52, -L * .19); g.lineTo(-L * .46, 0);
-  g.lineTo(-L * .52, L * .19); g.lineTo(-L * .48, L * .19); g.closePath(); g.fill();
-  g.fillStyle = '#ffffff'; // 胴体
-  rr(g, -L * .5, -L * .075, L, L * .15, L * .075); g.fill();
-  g.fillStyle = color; g.fillRect(-L * .5, -L * .02, L * .75, L * .04);
-  g.fillStyle = '#29425c'; g.fillRect(L * .36, -L * .045, L * .06, L * .09);
-  g.restore();
-}
+// 地上の車（原寸）
+function cateringTruck(x, y) { R(x, y, 4, 7, '#f1f3f5'); R(x, y, 4, 2, '#2d6db5'); P(x + 1, y + 1, '#9fd3e8'); P(x + 2, y + 1, '#9fd3e8'); hline(x, y + 6, 4, '#c3c8ce'); }
+function tug(x, y) { R(x, y, 3, 4, '#e8b23a'); P(x + 1, y + 1, '#2a2e35'); }
+function cart(x, y) { R(x, y, 3, 3, '#7d848c'); P(x + 1, y + 1, ['#d9534f', '#3e7cc7', '#5aa469'][x % 3]); }
+
+// ============ 描画（毎フレーム） ============
 let drawPending = false, lastFrame = 0, lastDraw = 0;
 function requestDraw() { if (!drawPending) { drawPending = true; requestAnimationFrame(frame); } }
+function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); }
 function draw() {
   if (staticDirty) drawStatic();
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(st, 0, 0);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  G = fg; fg.drawImage(art, 0, 0);
   const tt = S.t + (speed ? acc / MS_PER_MIN : 0);
-  // 選択中のマス
-  if (sel) {
-    ctx.strokeStyle = '#ffc857'; ctx.lineWidth = 3;
-    if (sel.type === 'cell') ctx.strokeRect(sel.c * cell + 1.5, yTm + sel.r * cell + 1.5, cell - 3, cell - 3);
-    if (sel.type === 'gate') ctx.strokeRect(sel.i * cell + 1.5, yAp + 1.5, cell - 3, AP - 3);
+  // 駐機中の車
+  for (const f of S.flights) if ((f.st === 'park' || f.st === 'ready') && f.gate >= 0) {
+    const gx = f.gate * NC + 12;
+    if (f.st === 'park' && tt - f.t0 < TURN[f.size] - 8) cateringTruck(gx - 9, nTm - 11);
+    cart(gx + 7, nAp + 4); cart(gx + 7, nAp + 8);
   }
   // 飛行機（駐機 → 地上 → 空中 の順）
   const order = { park: 0, ready: 0, in: 1, out: 1, land: 2, tko: 2 };
   const vis = S.flights.filter(f => f.st in order).sort((a, b) => order[a.st] - order[b.st]);
-  for (const f of vis) { const p = planePos(f, tt); if (p) drawPlane(ctx, p.x, p.y, p.ang, f.size, f.color, p.sc, p.air || 0); }
-  // 上空待機
-  const hold = S.flights.filter(f => f.st === 'hold').length;
-  if (hold) {
-    const txt = `上空で待機 ✈×${hold}`;
-    ctx.font = `600 ${Math.max(12, Math.round(cell * .26))}px -apple-system,sans-serif`;
-    const w = ctx.measureText(txt).width + 12;
-    ctx.fillStyle = 'rgba(200,50,50,.92)'; rr(ctx, W - w - 4, 4, w, Math.max(20, cell * .4), 6); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, W - w + 2, 4 + Math.max(20, cell * .4) / 2);
+  const lightsToDraw = [];
+  for (const f of vis) {
+    const p = planePos(f, tt); if (!p) continue;
+    const sp = planeSprite(f.size, f.color, p.dir), x = Math.round(p.x - sp.body.width / 2), y = Math.round(p.y - sp.body.height / 2);
+    const air = p.air || 0;
+    fg.globalAlpha = air ? .22 : .3; fg.drawImage(sp.shadow, x + 1 + Math.round(air * 10), y + 1 + Math.round(air * 12)); fg.globalAlpha = 1;
+    if (p.push) tug(Math.round(p.x) - 1, y + sp.body.height);
+    fg.drawImage(sp.body, x, y);
+    lightsToDraw.push([sp.lights, x, y]);
   }
   // 夜
-  const t = S.t, dark = t < 60 ? .28 * (1 - t / 60) : t > 720 ? Math.min(.42, (t - 720) / 240 * .42) : 0;
+  const t = S.t, dark = t < 60 ? .3 * (1 - t / 60) : t > 720 ? Math.min(.5, (t - 720) / 240 * .5) : 0;
   if (dark > 0) {
-    ctx.fillStyle = `rgba(8,14,40,${dark})`; ctx.fillRect(0, 0, W, H);
+    fg.fillStyle = `rgba(8,14,40,${dark})`; fg.fillRect(0, 0, NW, nTm);
+    fg.fillStyle = `rgba(8,14,40,${dark * .35})`; fg.fillRect(0, nTm, NW, NH - nTm);
     if (dark > .12) {
-      ctx.fillStyle = `rgba(255,220,120,${dark * 2})`;
-      const ys = S.runway >= 4 ? [rwY('a'), rwY('d')] : [rwY('a')], hh = S.runway >= 4 ? RW * .15 : RW * .2;
-      for (const y of ys) for (let x = cell * .3; x < W - cell * .2; x += cell * .5) { ctx.fillRect(x, y - hh - 1, 2, 2); ctx.fillRect(x, y + hh - 1, 2, 2); }
+      const h = rwHalf();
+      for (const y of S.runway >= 4 ? [rwY('a'), rwY('d')] : [rwY('a')]) for (let x = 6; x < NW - 4; x += 6) { P(x, y - h, '#fff6d0'); P(x, y + h - 1, '#fff6d0'); }
+      for (let x = 2; x < NW; x += 8) { P(x, nTx + 2, '#4a8cff'); P(x + 4, nTx + 10, '#4a8cff'); }
+      for (let x = 1; x < NW; x += 4) P(x, nTm - 2, '#ffe9a8');
+      for (const [l, x, y] of lightsToDraw) fg.drawImage(l, x, y);
     }
   }
-  // 売上の数字
+  // 拡大して表示
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(fr, 0, 0, cv.width, cv.height);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawOverlay();
+}
+// 文字・バッジ（高解像度で上に重ねる）
+function badge(text, x, y, bg, fgc, align = 'left') {
+  ctx.font = `600 ${clamp(Math.round(cell * .17), 11, 14)}px -apple-system,sans-serif`;
+  const w = ctx.measureText(text).width + 8, h = clamp(cell * .24, 15, 19);
+  const bx = align === 'right' ? x - w : x;
+  ctx.fillStyle = bg; rr(ctx, bx, y, w, h, 4); ctx.fill();
+  ctx.fillStyle = fgc; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, bx + 4, y + h / 2 + .5);
+}
+function drawOverlay() {
+  if (sel) {
+    ctx.strokeStyle = '#ffcd1c'; ctx.lineWidth = 3;
+    if (sel.type === 'cell') ctx.strokeRect(sel.c * cell + 1.5, yTm + sel.r * cell + 1.5, cell - 3, cell - 3);
+    if (sel.type === 'gate') ctx.strokeRect(sel.i * cell + 1.5, yAp + 1.5, cell - 3, AP - 3);
+  }
+  for (let i = 0; i < COLS; i++) {
+    const lv = S.gates[i];
+    if (lv) badge(['', 'S', 'M', 'L'][lv], i * cell + 2, yAp + 4, 'rgba(20,28,38,.75)', '#ffcd1c');
+    else { ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.font = `500 ${Math.round(cell * .45)}px -apple-system,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('+', (i + .5) * cell, yAp + AP / 2); }
+  }
+  for (let r = 0; r < S.land; r++) for (let c = 0; c < COLS; c++) {
+    const b = S.grid[idx(r, c)]; if (!b) continue;
+    const x = c * cell, y = yTm + r * cell, lv = lvOf(b);
+    if (FAC[b.k].shop) {
+      const m = adjInfo(r, c, b.k).mul;
+      if (Math.abs(m - 1) > .01) badge((m > 1 ? '+' : '') + Math.round((m - 1) * 100) + '%', x + cell - 2, y + 2, m > 1 ? 'rgba(30,110,60,.9)' : 'rgba(150,40,40,.9)', '#fff', 'right');
+    }
+    if (lv > 1) for (let i = 0; i < lv; i++) {
+      ctx.fillStyle = 'rgba(20,28,38,.8)'; ctx.beginPath(); ctx.arc(x + 7 + i * 8, y + cell - 7, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffcd1c'; ctx.beginPath(); ctx.arc(x + 7 + i * 8, y + cell - 7, 2.6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  if (S.land < TROWS && LAND_COST[S.land]) {
+    const y = yTm + S.land * cell + cell * .55;
+    const txt = `土地を広げる ${yen(LAND_COST[S.land])}`;
+    ctx.font = `500 ${Math.max(13, Math.round(cell * .28))}px -apple-system,sans-serif`;
+    const w = ctx.measureText(txt).width + 20, h = Math.max(26, cell * .5);
+    ctx.fillStyle = 'rgba(20,28,38,.82)'; rr(ctx, W / 2 - w / 2, y - h / 2, w, h, 8); ctx.fill();
+    ctx.fillStyle = '#ffcd1c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(txt, W / 2, y + .5);
+  }
+  const hold = S.flights.filter(f => f.st === 'hold').length;
+  if (hold) badge(`上空で待機 ${hold}機`, W - 4, 4, 'rgba(200,50,50,.95)', '#fff', 'right');
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = `600 ${Math.max(13, Math.round(cell * .3))}px -apple-system,sans-serif`;
   for (const f of floats) {
-    ctx.globalAlpha = clamp(f.life, 0, 1); ctx.fillStyle = '#1b5e20';
+    ctx.globalAlpha = clamp(f.life, 0, 1); ctx.fillStyle = '#123d1c';
     ctx.fillText(f.text, f.x + 1, f.y + 1); ctx.fillStyle = '#c8ffcf'; ctx.fillText(f.text, f.x, f.y);
   }
   ctx.globalAlpha = 1;
@@ -972,7 +1262,7 @@ function placeEffect(r, c, k) {
 }
 function buildRow(r, c, k) {
   const f = FAC[k], maxed = f.max && cnt(k) >= f.max, fx = placeEffect(r, c, k);
-  return `<div class="row ${maxed ? 'off' : ''}"><div class="ic">${f.icon}</div>
+  return `<div class="row ${maxed ? 'off' : ''}"><div class="ic"><img class="pix" src="${facIcon(k)}" alt=""></div>
     <div class="bd"><b>${f.name}</b>${maxed ? '建てられるのは1つまで' : shortEffect(k)}${fx && !maxed ? `<br><span class="fx ${fx[1]}">${fx[0]}</span>` : ''}</div>
     <button class="btn price" data-act="build" data-v="${k}" ${maxed || S.money < f.cost ? 'disabled' : ''}>${yen(f.cost)}</button></div>`;
 }
@@ -992,14 +1282,14 @@ function openCell(r, c, focus) {
   }
   if (locked.length) {
     h += `<details class="locked"><summary>ランクが上がると建てられるもの（${locked.length}）</summary><div class="list">` +
-      locked.map(k => `<div class="row"><div class="ic">${FAC[k].icon}</div><div class="bd"><b>${FAC[k].name}</b>${RANKS[FAC[k].rank].name}で解放</div></div>`).join('') + '</div></details>';
+      locked.map(k => `<div class="row"><div class="ic"><img class="pix" src="${facIcon(k)}" alt=""></div><div class="bd"><b>${FAC[k].name}</b>${RANKS[FAC[k].rank].name}で解放</div></div>`).join('') + '</div></details>';
   }
   openSheet(h);
   if (focus) body.querySelector(`[data-v="${focus}"]`)?.closest('.row')?.scrollIntoView({ block: 'center' });
 }
 function openBuilding(r, c, b) {
   const f = FAC[b.k], lv = lvOf(b), a = f.shop ? adjInfo(r, c, b.k) : null;
-  let h = `${X}<div class="top"><div class="big">${f.icon}</div><div><h2>${f.name}${pips(lv)}</h2><p>${f.desc}</p></div></div>`;
+  let h = `${X}<div class="top"><div class="big"><img class="pix big" src="${facIcon(b.k)}" alt=""></div><div><h2>${f.name}${pips(lv)}</h2><p>${f.desc}</p></div></div>`;
   // いちばん大事な数字
   if (f.shop) h += `<div class="stat"><div><small>きょうの売上</small><b class="signc">${yen(b.earn)}</b></div><div><small>場所の効果</small><b class="${a.mul > 1.01 ? 'ok' : a.mul < .99 ? 'ng' : ''}">×${a.mul.toFixed(2)}</b></div></div>`;
   else if (b.k === 'counter') h += `<div class="stat"><div><small>全カウンターの処理</small><b>${num(C.ccap)}<small>人/時</small></b></div><div><small>いまの旅客の流れ</small><b class="${S.ema.flow > C.ccap ? 'ng' : ''}">${num(S.ema.flow)}<small>人/時</small></b></div></div>`;
@@ -1055,7 +1345,7 @@ function contractRow(c, act) {
   const warns = [];
   if (!hasGateFor(c.size)) warns.push(`${GATE_NAME[c.size]}以上が必要`);
   if (c.intl && !cnt('ciq')) warns.push('出入国審査が必要');
-  return `<div class="row"><div class="ic" style="color:${c.color}">✈︎</div><div class="bd">
+  return `<div class="row"><div class="ic"><img class="pix" src="${planeIcon(c.size, c.color)}" alt=""></div><div class="bd">
     <b>${c.name}・${c.dest}線${c.intl ? '（国際）' : ''}</b>${SIZE_NAME[c.size]}・1日${c.perDay}便・${c.pax}人/便<br>着陸料 ${yen(c.fee)}/便
     ${warns.length ? `<br><span class="fx ng">${warns.join('・')}</span>` : ''}</div>
     ${act === 'accept' ? `<button class="btn price" data-act="accept" data-v="${c.id}">契約する</button>` : `<button class="btn ghost" data-act="drop" data-v="${c.id}">やめる</button>`}</div>`;
@@ -1204,7 +1494,9 @@ if (!load()) newGame();
 updateHud(); layout(); requestDraw();
 if (S.dayOver) openReport(null);
 else if (!S.seenHelp) openHelp();
-if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// 開発中（localhost）は古い版が残らないよう service worker を使わない（?sw を付けると使う）
+const DEV = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && !location.search.includes('sw');
+if ('serviceWorker' in navigator && location.protocol !== 'file:' && !DEV) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 // デバッグ用
 window.T = {
