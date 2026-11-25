@@ -2,7 +2,7 @@
 // キャッシュがあればそれを返し、裏で新しい版を取りに行く（次に開いたとき新しい版になる）。
 // ファイルを増やしたら ASSETS に足し、VERSION を上げる。
 // 取りに行くときはブラウザの一時保存（GitHub Pages は最大10分）を通さず、必ずサーバーに問い合わせる。
-const VERSION = '0.6.4';
+const VERSION = '0.7.0';
 const CACHE = 'soranominato-' + VERSION;
 const ASSETS = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-180.png'];
 self.addEventListener('install', e => {

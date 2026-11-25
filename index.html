@@ -269,7 +269,7 @@ const ZONES = {
   g: { name: 'ゲート待合室', short: 'ゲート', color: '#4a5a7c', ink: '#ffffff', hint: '' },
 };
 const FLOOR_NAME = ['1階（到着）', '2階（出発）'];
-const WING_COST = [0, 8000, 30000], WING_RANK = [0, 2, 3];
+const WING_COST = [0, 12000, 50000], WING_RANK = [0, 2, 3];
 const colRange = () => [2 - S.wings, 5 + S.wings];
 const isOpen = c => { const [a, b] = colRange(); return c >= a && c <= b; };
 const zoneAt = (f, r, c) => (f === 1 && r === 0) ? 'g' : S.zn[f][idx(r, c)];
@@ -284,28 +284,42 @@ function defaultZones() {
 }
 
 // ============ データ ============
-const SIZE_NAME = ['', '小型機', '中型機', '大型機'];
-const GATE_NAME = ['', 'ゲートS', 'ゲートM', 'ゲートL'];
-const GATE_COST = [0, 500, 2500, 9000];
-const GATE_UP = [0, 30, 90, 260];
-const GATE_RANK = [0, 1, 2, 3];
-const TURN = [0, 50, 70, 95];
-const PAX = [0, 60, 160, 340];
-const FEE = [0, 120, 260, 560];
+const SIZE_NAME = ['', '小型機', '中型機', '大型機', '超大型機'];
+const GATE_NAME = ['', 'ゲートS', 'ゲートM', 'ゲートL', 'ゲートLL'];
+const GATE_SHORT = ['', 'S', 'M', 'L', 'LL'];
+const GATE_MAX = 4;
+const GATE_COST = [0, 600, 4000, 15000, 150000];
+const GATE_UP = [0, 30, 90, 260, 1500];
+const GATE_RANK = [0, 1, 2, 3, 5];
+const TURN = [0, 50, 70, 95, 120];
+const PAX = [0, 60, 160, 340, 520];
+const FEE = [0, 120, 260, 560, 950];
+// 地上支援：給油・清掃・荷物の積み下ろしを早くして、ゲートにいる時間を短くする
+const GH = [
+  { mul: 1 },
+  { mul: .88, cost: 20000, up: 300, rank: 3, desc: 'トーイングカーと給油車を増やす' },
+  { mul: .78, cost: 120000, up: 900, rank: 5, desc: '荷物の積み下ろしを機械化する' },
+  { mul: .68, cost: 500000, up: 2500, rank: 6, desc: '駐機場の地下に給油管を通す' },
+];
+const turnOf = size => Math.round(TURN[size] * GH[S.gh || 0].mul);
 const RENT = 60;
 const RUNWAY = [null,
   { cap: 6,  up: 0,   name: '滑走路 Lv1' },
-  { cap: 10, up: 120, name: '滑走路 Lv2', cost: 4000, rank: 2, desc: '誘導路を増やす' },
-  { cap: 16, up: 400, name: '滑走路 Lv3', cost: 20000, rank: 3, desc: '滑走路を延ばし、計器着陸装置をつける' },
-  { cap: 28, up: 1500, name: '第2滑走路', cost: 90000, rank: 4, desc: '2本目の滑走路。着陸と離陸を分ける' },
+  { cap: 10, up: 120, name: '滑走路 Lv2', cost: 6000, rank: 2, desc: '誘導路を増やす' },
+  { cap: 16, up: 400, name: '滑走路 Lv3', cost: 30000, rank: 3, desc: '滑走路を延ばし、計器着陸装置をつける' },
+  { cap: 28, up: 1500, name: '第2滑走路', cost: 120000, rank: 4, desc: '2本目の滑走路。着陸と離陸を分ける' },
+  { cap: 40, up: 3500, name: '第2滑走路 同時運用', cost: 800000, rank: 6, desc: '管制を増やし、2本で着陸と離陸を同時に行う' },
 ];
 const RANKS = [null,
   { name: '地方空港' },
-  { name: 'にぎわう空港', pax: 700,   rep: 40 },
-  { name: '拠点空港',     pax: 3500,  rep: 54 },
-  { name: '国際空港',     pax: 8000,  rep: 64, need: 'ciq' },
-  { name: 'ハブ空港',     pax: 11000, rep: 74 },
+  { name: 'にぎわう空港', pax: 800,   rep: 42 },
+  { name: '拠点空港',     pax: 4000,  rep: 54 },
+  { name: '国際空港',     pax: 8000,  rep: 62, need: { text: '出入国審査がある', ok: () => cnt('ciq') > 0 } },
+  { name: 'ハブ空港',     pax: 12000, rep: 68, need: { text: '第2滑走路がある', ok: () => S.runway >= 4 } },
+  { name: '世界の玄関口', pax: 18000, rep: 74, need: { text: 'ゲートLLがある', ok: () => S.gates.some(g => g >= 4) } },
+  { name: '世界一の空港', pax: 24000, rep: 80, need: { text: '空港ホテルがある', ok: () => S.sites.hotel > 0 } },
 ];
+const MAX_RANK = RANKS.length - 1;
 const FAC = {
   checkin:   { name: 'チェックインカウンター', cost: 400, up: 20, rank: 1, cap: 120, zones: ['p'],
                desc: '受け持ちの航空会社を決めて使う。1時間に120人。専用にすると航空会社から賃料が入る。' },
@@ -337,13 +351,17 @@ const FAC = {
                shop: { draw: .10, spend: 3, cap: 120 }, adj: { plant: .1, bench: .1 }, desc: '評判+3・快適さ+4。飛行機が見える。' },
   dutyfree:  { name: '免税店', cost: 30000, up: 700, rank: 4, zones: ['d'],
                shop: { draw: .30, spend: 10, cap: 60, intl: 1 }, adj: { plant: .1, lounge: .15, souvenir: .1 }, desc: '国際線の出発客の30%が立ち寄る。' },
+  spa:       { name: 'シャワー・仮眠室', cost: 50000, up: 500, rank: 5, comfort: 5, rep: 2, zones: ['d'],
+               shop: { draw: .04, spend: 14, cap: 20 }, adj: { plant: .1, lounge: .1 }, desc: '評判+2・快適さ+5。長旅や乗り継ぎの客がひと休みする。' },
+  museum:    { name: '航空博物館', cost: 250000, up: 2500, rank: 6, comfort: 3, rep: 4, zones: ['p', 'd'],
+               shop: { draw: .06, spend: 8, cap: 90 }, adj: { deck: .2, souvenir: .1 }, desc: '評判+4・快適さ+3。見送りの人も楽しめる。展望デッキの隣だと入館者+20%。' },
   parking:   { name: '駐車場', cost: 1500, up: 30, rank: 1, site: 1, shop: { draw: .25, spend: 3, cap: 200 },
                desc: '車で来る人の駐車料金。レベルを上げると平面 → 2層 → 4層の立体駐車場になる。' },
   station:   { name: '空港駅', cost: 25000, up: 600, rank: 3, site: 1, rep: 5, paxMul: .15, desc: '鉄道がつながる。どの便も旅客+15%・評判+5。' },
-  hotel:     { name: '空港ホテル', cost: 80000, up: 2000, rank: 5, site: 1, rep: 3, shop: { draw: .04, spend: 35, cap: 25 }, desc: '評判+3。乗り継ぎ客が泊まる。' },
+  hotel:     { name: '空港ホテル', cost: 200000, up: 3000, rank: 5, site: 1, rep: 3, shop: { draw: .04, spend: 35, cap: 25 }, desc: '評判+3。乗り継ぎ客が泊まる。' },
 };
 const SITES = ['parking', 'station', 'hotel'];
-const BUILD_ORDER = ['checkin', 'selfcheck', 'security', 'ciq', 'baggage', 'stairs', 'info', 'kiosk', 'cafe', 'souvenir', 'restaurant', 'lounge', 'deck', 'dutyfree', 'toilet', 'bench', 'plant'];
+const BUILD_ORDER = ['checkin', 'selfcheck', 'security', 'ciq', 'baggage', 'stairs', 'info', 'kiosk', 'cafe', 'souvenir', 'restaurant', 'lounge', 'deck', 'dutyfree', 'spa', 'museum', 'toilet', 'bench', 'plant'];
 const LV_COST = [0, 0, 2, 4], LV_CAP = [0, 1, 1.6, 2.3], LV_SPEND = [0, 1, 1.2, 1.4], LV_COMFORT = [0, 1, 1.5, 2], LV_UP = [0, 1, 1.5, 2.2];
 const lvOf = b => b.lv || 1;
 const AIRLINES = [['そよかぜ航空','#3fa7d6'],['しろくま航空','#7f9bb3'],['つばめエア','#2b4c7e'],['みなみ風航空','#f08a5d'],
@@ -376,12 +394,22 @@ const MISSIONS = [
   { id: 'gateL',  rank: 3, text: 'ゲートLを作る', rw: 5000, chk: () => S.gates.some(g => g >= 3) },
   { id: 'ciq',    rank: 3, text: '出入国審査をつくる', rw: 6000, chk: () => cnt('ciq') >= 1 },
   { id: 'sales',  rank: 3, text: '1日のお店の売上 ¥20,000', rw: 10000, chk: () => S.today.shop >= 20000 },
+  { id: 'gh1',    rank: 3, text: '地上支援を Lv1 にする', rw: 8000, chk: () => (S.gh || 0) >= 1 },
   { id: 'intl',   rank: 4, text: '国際線と契約する', rw: 10000, chk: () => S.contracts.some(c => c.intl) },
   { id: 'duty',   rank: 4, text: '免税店を建てる', rw: 15000, chk: () => cnt('dutyfree') >= 1 },
   { id: 'rep80',  rank: 4, text: '評判 4.0 以上', rw: 20000, chk: () => S.rep >= 80 },
   { id: 'rw4',    rank: 4, text: '第2滑走路をつくる', rw: 40000, chk: () => S.runway >= 4 },
   { id: 'hotel',  rank: 5, text: '空港ホテルを建てる', rw: 30000, chk: () => S.sites.hotel > 0 },
-  { id: 'pax20k', rank: 5, text: '1日の旅客 20,000人', rw: 100000, chk: () => S.today.pax >= 20000 },
+  { id: 'gateLL', rank: 5, text: 'ゲートLLを作る', rw: 40000, chk: () => S.gates.some(g => g >= 4) },
+  { id: 'spa',    rank: 5, text: 'シャワー・仮眠室を建てる', rw: 20000, chk: () => cnt('spa') >= 1 },
+  { id: 'pax15k', rank: 5, text: '1日の旅客 15,000人', rw: 60000, chk: () => S.today.pax >= 15000 },
+  { id: 'pax20k', rank: 6, text: '1日の旅客 20,000人', rw: 100000, chk: () => S.today.pax >= 20000 },
+  { id: 'museum', rank: 6, text: '航空博物館を建てる', rw: 60000, chk: () => cnt('museum') >= 1 },
+  { id: 'gh3',    rank: 6, text: '地上支援を Lv3 にする', rw: 100000, chk: () => (S.gh || 0) >= 3 },
+  { id: 'rw5',    rank: 6, text: '第2滑走路を同時運用にする', rw: 150000, chk: () => S.runway >= 5 },
+  { id: 'll4',    rank: 7, text: 'ゲートLLを4つにする', rw: 200000, chk: () => S.gates.filter(g => g >= 4).length >= 4 },
+  { id: 'rep4',   rank: 7, text: '評判 4.2 以上', rw: 200000, chk: () => S.rep >= 84 },
+  { id: 'pax30k', rank: 7, text: '1日の旅客 30,000人', rw: 300000, chk: () => S.today.pax >= 30000 },
 ];
 
 // ============ 状態 ============
@@ -401,7 +429,7 @@ function placeStarter() {
 }
 function newGame() {
   S = {
-    v: 3, money: 3000, day: 1, t: 0, rep: 30, rank: 1, runway: 1, wings: 0,
+    v: 3, money: 3000, day: 1, t: 0, rep: 30, rank: 1, runway: 1, wings: 0, gh: 0, clearDay: 0,
     gates: Array(COLS).fill(0), sites: { parking: 0, station: 0, hotel: 0 },
     contracts: [], offers: [], flights: [], rec: [], rwb: 1, fid: 1, cid: 1,
     ema: { flow: 0, crowd: 0 }, load: { ci: 0, sec: 0, ciq: 0, bag: 0 }, today: newToday(), last: null, missions: {}, event: null, nextEvent: null,
@@ -447,7 +475,7 @@ function load() {
     if (!d) return false;
     if (d.v === 1 || d.v === 2) { migrateOld(d); save(); return true; }
     if (d.v !== 3) return false;
-    S = d; recalc(); return true;
+    S = d; S.gh ??= 0; S.clearDay ??= 0; recalc(); return true;
   } catch (e) { return false; }
 }
 
@@ -568,7 +596,7 @@ function recalc() {
   }
   C.variety = variety.size;
   for (const g of S.gates) C.upkeep += GATE_UP[g];
-  C.upkeep += RUNWAY[S.runway].up;
+  C.upkeep += RUNWAY[S.runway].up + (GH[S.gh || 0].up || 0);
   markStatic();
 }
 function repParts() {
@@ -590,13 +618,15 @@ function genOffer() {
   let maxS = 1;
   if (r >= 2 && S.rep >= 35) maxS = 2;
   if (r >= 3 && S.rep >= 50) maxS = 3;
+  if (r >= 5 && S.rep >= 62) maxS = 4;
   let size = 1; const x = Math.random();
   if (maxS >= 2 && x < (r >= 4 ? .85 : .6)) size = 2;
   if (maxS >= 3 && x < (r >= 4 ? .45 : .28)) size = 3;
+  if (maxS >= 4 && x < (r >= 6 ? .22 : .14)) size = 4;
   if (intl) size = Math.max(2, size);
   let name, color, dest;
   for (let i = 0; i < 30; i++) { [name, color] = pick(intl ? INTL : AIRLINES); dest = pick(intl ? INTL_DEST : DOM_DEST); if (!used.has(name + dest)) break; }
-  const perDay = size === 3 ? ri(1, 3) : size === 2 ? ri(2, 4) : ri(2, 5);
+  const perDay = size === 4 ? ri(1, 2) : size === 3 ? ri(1, 3) : size === 2 ? ri(2, 4) : ri(2, 5);
   const fm = rnd(.85, 1.2);
   return { id: S.cid++, name, color, dest, size, perDay, intl: intl ? 1 : 0, fee: Math.round(FEE[size] * fm * (intl ? 1.6 : 1) / 10) * 10, pax: Math.round(PAX[size] * (intl ? 1.1 : 1) * rnd(.9, 1.12)) };
 }
@@ -619,7 +649,7 @@ function findGate(size) {
   return best;
 }
 function hasGateFor(size) { return S.gates.some(g => g >= size); }
-function gateLoad() { let need = 0; for (const c of S.contracts) need += c.perDay * (TURN[c.size] + 8); const cap = gateCount() * 900; return cap ? need / cap : (need ? 9 : 0); }
+function gateLoad() { let need = 0; for (const c of S.contracts) need += c.perDay * (turnOf(c.size) + 8); const cap = gateCount() * 900; return cap ? need / cap : (need ? 9 : 0); }
 
 // ============ 1分ずつ進める ============
 function stepMinute() {
@@ -630,7 +660,7 @@ function stepMinute() {
     if (f.st === 'sched' && t >= f.arr) f.st = 'hold';
     else if (f.st === 'land' && el >= 3) { f.st = 'in'; f.t0 = t; }
     else if (f.st === 'in' && el >= 3) { f.st = 'park'; f.t0 = t; sfx('chime'); }
-    else if (f.st === 'park' && el >= TURN[f.size]) { f.st = 'ready'; f.t0 = t; }
+    else if (f.st === 'park' && el >= turnOf(f.size)) { f.st = 'ready'; f.t0 = t; }
     else if (f.st === 'out' && el >= 3) { f.st = 'tko'; f.t0 = t; sfx('takeoff'); }
     else if (f.st === 'tko' && el >= 2) { f.st = 'done'; }
   }
@@ -655,7 +685,7 @@ function stepMinute() {
   // 旅客の流れ。つながっていない流れは進めない
   const depA = {}; let depD = 0, depI = 0, arrD = 0, arrI = 0;
   for (const f of S.flights) if (f.st === 'park') {
-    const p = f.pax / 2 / TURN[f.size];
+    const p = f.pax / 2 / turnOf(f.size);
     depA[f.name] = (depA[f.name] || 0) + p;
     if (f.intl) { depI += p; arrI += p; } else { depD += p; arrD += p; }
   }
@@ -719,7 +749,10 @@ function endDay() {
   checkMissions();
   let rankUp = null;
   const nx = RANKS[S.rank + 1];
-  if (nx && D.pax >= nx.pax && S.rep >= nx.rep && (!nx.need || cnt(nx.need) > 0)) { S.rank++; rankUp = nx.name; sfx('rank'); }
+  if (nx && D.pax >= nx.pax && S.rep >= nx.rep && (!nx.need || nx.need.ok())) {
+    S.rank++; rankUp = nx.name; sfx('rank');
+    if (S.rank === MAX_RANK && !S.clearDay) S.clearDay = S.day;
+  }
   S.last = { ...D, day: S.day, rep: S.rep };
   S.offers = []; for (let i = 0; i < 3; i++) S.offers.push(genOffer());
   S.seenOffers = false;
@@ -793,13 +826,17 @@ function buildSite(k) {
   S.money -= cost; S.sites[k] = lv + 1; recalc(); checkMissions(); save(); sfx('build'); openSite(k);
 }
 function upgradeGate(i) {
-  const lv = S.gates[i] + 1; if (lv > 3 || !isOpen(i)) return;
+  const lv = S.gates[i] + 1; if (lv > GATE_MAX || !isOpen(i)) return;
   if (S.money < GATE_COST[lv] || S.rank < GATE_RANK[lv]) return;
   S.money -= GATE_COST[lv]; S.gates[i] = lv; recalc(); checkMissions(); save(); sfx('build'); openGate(i);
 }
 function upgradeRunway() {
   const nx = RUNWAY[S.runway + 1]; if (!nx || S.money < nx.cost || S.rank < nx.rank) return;
   S.money -= nx.cost; S.runway++; recalc(); checkMissions(); save(); sfx('build'); openRunway();
+}
+function upgradeGH() {
+  const n = (S.gh || 0) + 1, nx = GH[n]; if (!nx || S.money < nx.cost || S.rank < nx.rank) return;
+  S.money -= nx.cost; S.gh = n; recalc(); checkMissions(); save(); sfx('build'); openRunway();
 }
 function buildWing() {
   const w = S.wings + 1; if (w > 2 || S.money < WING_COST[w] || S.rank < WING_RANK[w]) return;
@@ -1164,6 +1201,19 @@ const FACMODEL = {
     for (const x of [5, 10]) for (let y = 8; y < 16; y += 2) v.box(x, y, 0, 1, 1, 2, '#2a2e35');
     const r = rng(14); for (let i = 0; i < 6; i++) v.person([2, 7, 12][i % 3] + Math.floor(r() * 2), 8 + Math.floor(r() * 7), PEOPLE[(i + 2) % 8]);
   },
+  spa(v) {
+    backWalls(v, '#2f4f5a', 6, '#4fb3bf');
+    for (const x0 of [1, 5, 9]) { v.box(x0, 1, 0, 1, 4, 5, '#d5dde2'); v.box(x0 + 1, 1, 4, 3, 1, 1, '#9fc4dc'); v.set(x0 + 2, 2, 3, '#c3c8ce'); }
+    for (const y of [8, 12]) for (const x0 of [2, 9]) { v.box(x0, y, 0, 5, 2, 1, '#8a8f96'); v.box(x0, y, 1, 5, 2, 1, '#f1ede4'); v.box(x0, y, 1, 1, 2, 1, '#ffffff'); }
+    v.person(13, 3, '#f2f2f2').person(7, 11, '#3e7cc7');
+  },
+  museum(v) {
+    backWalls(v, '#e6e1d6', 7, '#2b4c7e');
+    v.box(3, 4, 0, 10, 8, 1, '#8a8f96');
+    for (const [x, y, z, c] of planeModel(1, '#c8323a').m.values()) v.set(x + 8, y + 8, z + 1, c);
+    for (const x of [1, 14]) v.box(x, 13, 0, 1, 2, 2, '#4a4f58').set(x, 13, 2, 'rgba(160,210,235,.75)');
+    v.person(3, 14, '#3e7cc7').person(12, 2, '#e8a23a').person(11, 14, '#5aa469');
+  },
   dutyfree(v) {
     const r = rng(20), cs = ['#b388ff', '#ff80ab', '#80deea', '#d4af37', '#ffffff'];
     backWalls(v, '#3b2a55', 6, '#d4af37');
@@ -1188,6 +1238,7 @@ const PLANE = [null,
   { len: 13, span: 15, r: 1, le: 2, root: 3, tip: 2, sweep: 0, wz: 3, eng: [{ d: 3, len: 2, w: 1, prop: 1 }], sh: 3, sz: 7, fin: 3, fh: 3, ttail: 1 },
   { len: 18, span: 17, r: 1, le: 2, root: 4, tip: 1, sweep: .5, wz: 1, eng: [{ d: 3, len: 3, w: 1 }], sh: 4, sz: 2, fin: 4, fh: 4 },
   { len: 24, span: 21, r: 2, le: 3, root: 6, tip: 2, sweep: .55, wz: 1, eng: [{ d: 4, len: 3, w: 1 }, { d: 7, len: 3, w: 1 }], sh: 6, sz: 3, fin: 5, fh: 5 },
+  { len: 29, span: 25, r: 2, le: 4, root: 7, tip: 2, sweep: .55, wz: 1, eng: [{ d: 5, len: 3, w: 1 }, { d: 9, len: 3, w: 1 }], sh: 7, sz: 3, fin: 6, fh: 6, deck: 1 },
 ];
 function planeModel(size, liv) {
   const p = PLANE[size], v = new Vox(), x0 = -Math.floor(p.len / 2), x1 = x0 + p.len - 1, half = (p.span - 1) / 2, zc = 1 + p.r;
@@ -1213,7 +1264,10 @@ function planeModel(size, liv) {
       v.set(x, dy, zc + dz + lift, c);
     }
   }
-  for (const dy of p.r > 1 ? [-1, 0, 1] : [0]) v.set(x1 - 1, dy, zc + p.r, '#22344a');
+  if (p.deck) for (let x = x1 - 13; x <= x1 - 2; x++) for (let dy = -1; dy <= 1; dy++) {   // 2階席のふくらみ
+    v.set(x, dy, zc + p.r + 1, Math.abs(dy) === 1 && x % 2 === 0 && x < x1 - 3 ? '#2a3a50' : '#ffffff');
+  }
+  for (const dy of p.r > 1 ? [-1, 0, 1] : [0]) v.set(x1 - 1, dy, zc + p.r + (p.deck ? 1 : 0), '#22344a');
   if (p.r === 1) { v.set(x1 - 1, 1, zc, '#22344a'); v.set(x1 - 1, -1, zc, '#22344a'); }
   for (let h = 1; h <= p.fh; h++) for (let x = x0 + Math.floor(h / 2); x < x0 + p.fin; x++) v.set(x, 0, zc + p.r + h, liv);
   v.set(x1 - 2, 0, 0, '#2a2e35'); v.set(le(p.r + 1) - 1, p.r, 0, '#2a2e35'); v.set(le(p.r + 1) - 1, -p.r, 0, '#2a2e35');
@@ -1272,7 +1326,7 @@ function boundary(f, r, c, nr, nc) {   // 区画の境目に立てる仕切り
   return { gap: false };
 }
 function holdroomModel(num, lv) {
-  const v = new Vox(), seats = lv >= 3 ? [4, 7, 10, 13] : lv >= 2 ? [5, 9, 13] : [6, 11];
+  const v = new Vox(), seats = lv >= 4 ? [3, 5, 7, 9, 11, 13] : lv >= 3 ? [4, 7, 10, 13] : lv >= 2 ? [5, 9, 13] : [6, 11];
   for (const y of seats) for (let x = 1; x < 15; x++) { if (x === 7 || x === 8) continue; v.set(x, y, 0, '#3a3f47').set(x, y, 1, '#3d6eb0').set(x, y + 1, 1, '#2c5590').set(x, y + 1, 2, '#2c5590'); }
   v.box(10, 1, 0, 4, 2, 2, '#c9ced4').set(11, 1, 2, '#1e2630');
   v.box(2, 0, 0, 1, 1, 6, '#5d636d').box(2, 0, 6, 7, 1, 5, '#1f3b66');
@@ -1520,7 +1574,7 @@ function draw() {
     if (p.push) { const t = vehSprite('tug', 1); place(t, p.x - 1, p.y + PLANE[f.size].len / 2 + 1, 0, p.x + p.y + 20); }
     if (f.st === 'park' || f.st === 'ready') {
       const gx = gateCX(f.gate);
-      if (f.st === 'park' && tt - f.t0 < TURN[f.size] - 8) place(vehSprite('catering'), gx - 8, TMY - 11, 0, gx - 8 + TMY - 8);
+      if (f.st === 'park' && tt - f.t0 < turnOf(f.size) - 8) place(vehSprite('catering'), gx - 8, TMY - 11, 0, gx - 8 + TMY - 8);
       place(vehSprite('cart'), gx + 5, AP0 + 5, 0, gx + 5 + AP0 + 5); place(vehSprite('cart'), gx + 5, AP0 + 9, 0, gx + 5 + AP0 + 9);
     }
   }
@@ -1574,7 +1628,7 @@ function drawOverlay() {
   const big = cam.n / dpr >= 1.2, [c0, c1] = colRange(), [tx0, tx1] = termX();
   for (let i = c0; i <= c1; i++) {
     const lv = S.gates[i], [x, y] = cssAt(gateCX(i), 66);
-    if (lv) badge(['', 'S', 'M', 'L'][lv], x, y, 'rgba(20,28,38,.8)', '#ffcd1c');
+    if (lv) badge(GATE_SHORT[lv], x, y, 'rgba(20,28,38,.8)', '#ffcd1c');
     else { const [px, py] = cssAt(gateCX(i), 80); badge('＋ ゲート', px, py, 'rgba(20,28,38,.6)', '#ffffff'); }
   }
   for (let r = 0; r < TROWS; r++) for (let c = c0; c <= c1; c++) {
@@ -1827,7 +1881,9 @@ function advice() {
   if (noCounter) return { cls: 'ng', ic: 'counter', text: `${noCounter.name}のお客さんがチェックインできません。カウンターを用意しましょう`, go: '建てる', act: goBuild('p', 'checkin') };
   if (hold.some(f => f.why === 'ゲートが満杯')) {
     if (firstEmptyGate >= 0) return { cls: 'ng', ic: 'gate', text: 'ゲートが満杯で上空待ちの便があります。ゲートを増やしましょう', go: 'ゲートへ', act: () => openGate(firstEmptyGate) };
-    return { cls: 'ng', ic: 'gate', text: 'ゲートが満杯です。ターミナルを増築するか、路線を減らしましょう', go: S.wings < 2 ? '増築' : '航空会社', act: S.wings < 2 ? openWing : openAir };
+    if (S.wings < 2) return { cls: 'ng', ic: 'gate', text: 'ゲートが満杯です。ターミナルを増築するか、路線を減らしましょう', go: '増築', act: openWing };
+    if (GH[(S.gh || 0) + 1] && S.rank >= GH[(S.gh || 0) + 1].rank) return { cls: 'ng', ic: 'gate', text: 'ゲートが満杯です。地上支援を強化すると、1つのゲートで扱える便が増えます', go: '地上支援', act: openRunway };
+    return { cls: 'ng', ic: 'gate', text: 'ゲートが満杯です。路線を減らすか、大きなゲートに便をまとめましょう', go: '航空会社', act: openAir };
   }
   if (hold.some(f => f.why === '滑走路の混雑')) return { cls: 'warn', ic: 'runway', text: '滑走路が混んでいます。滑走路を強化しましょう', go: '滑走路', act: openRunway };
   const L = S.load;
@@ -1842,6 +1898,8 @@ function advice() {
   if (!cnt('kiosk')) return { cls: 'tip', ic: 'shop', text: '出発エリアに売店を建てると、搭乗を待つお客さんが買い物をします', go: '建てる', act: goBuild('d', 'kiosk') };
   if (!S.sites.parking) return { cls: 'tip', ic: 'parking', text: '駐車場をつくると、車で来るお客さんの駐車料金が入ります', go: '見る', act: () => openSite('parking') };
   if (S.offers.length && gateLoad() < .5) return { cls: 'tip', ic: 'plane', text: 'ゲートに余裕があります。路線を増やせます', go: '航空会社', act: openAir };
+  if (firstEmptyGate < 0 && gateLoad() > .7 && S.contracts.some(c => c.size <= 2) && S.offers.some(o => o.size >= 3 && hasGateFor(o.size)))
+    return { cls: 'tip', ic: 'swap', text: 'ゲートがいっぱいです。小さい飛行機の路線をやめて大きい便と契約すると、旅客が増えます', go: '航空会社', act: openAir };
   const nx = RANKS[S.rank + 1];
   if (nx) { const paxNow = S.last ? Math.round(S.last.pax) : 0; return { cls: '', ic: 'flag', text: `次は「${nx.name}」：1日の旅客 ${num(paxNow)}/${num(nx.pax)}人・評判 ${(nx.rep / 20).toFixed(1)}`, go: '目標', act: openGoal }; }
   return { cls: '', ic: 'tip', text: '建物をタップするとレベルアップできます', go: '', act: null };
@@ -1891,6 +1949,7 @@ body.addEventListener('click', e => {
   else if (a === 'assign') { assignCounter(sel.f, sel.r, sel.c, v); openCell(sel.f, sel.r, sel.c); }
   else if (a === 'gate') upgradeGate(+v);
   else if (a === 'runway') upgradeRunway();
+  else if (a === 'gh') upgradeGH();
   else if (a === 'site') buildSite(v);
   else if (a === 'wing') buildWing();
   else if (a === 'accept') acceptOffer(+v);
@@ -1994,9 +2053,9 @@ function openGate(i) {
   sel = { type: 'gate', i };
   const lv = S.gates[i], nx = lv + 1;
   const f = S.flights.find(f => f.gate === i && ['land', 'in', 'park', 'ready'].includes(f.st));
-  let h = `${X}<h2>${lv ? `${i + 1}番ゲート（${GATE_NAME[lv]}）` : `${i + 1}番ゲートの予定地`}</h2><p>ゲートを作ると、搭乗橋と2階の待合室（座席・搭乗口カウンター）ができます。S は小型機、M は中型機まで、L は大型機まで止められます。</p>`;
+  let h = `${X}<h2>${lv ? `${i + 1}番ゲート（${GATE_NAME[lv]}）` : `${i + 1}番ゲートの予定地`}</h2><p>ゲートを作ると、搭乗橋と2階の待合室（座席・搭乗口カウンター）ができます。S は小型機、M は中型機まで、L は大型機まで、LL は2階建ての超大型機まで止められます。</p>`;
   if (lv) h += `<div class="stat"><div><small>いま止まっている便</small><b style="font-size:var(--body)">${f ? `${f.name}（${f.dest}）` : 'なし'}</b></div><div><small>1日の維持費</small><b>${yen(GATE_UP[lv])}</b></div></div>`;
-  if (nx <= 3) {
+  if (nx <= GATE_MAX) {
     const locked = S.rank < GATE_RANK[nx];
     h += `<h3>${lv ? '大きくする' : 'つくる'}</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">${ic('gate')}</div><div class="bd"><b>${GATE_NAME[nx]}</b>${locked ? RANKS[GATE_RANK[nx]].name + 'で解放' : `${SIZE_NAME[nx]}まで・待合室の座席が増える・維持費 ${yen(GATE_UP[nx])}/日`}</div>
       <button class="btn price" data-act="gate" data-v="${i}" ${locked || S.money < GATE_COST[nx] ? 'disabled' : ''}>${yen(GATE_COST[nx])}</button></div></div>`;
@@ -2013,7 +2072,7 @@ function openDesign(f = DZ.f) {
   h += `<div class="seg" style="margin-top:12px">${[1, 0].map(x => `<button class="${x === f ? 'on' : ''}" data-act="dfloor" data-v="${x}">${FLOOR_NAME[x]}</button>`).join('')}</div>`;
   h += `<div class="tools">${TOOLS.map(([k, n]) => `<button class="${DZ.tool === k ? 'on' : ''}" data-act="dtool" data-v="${k}">${ZONES[k] ? `<i style="background:${ZONES[k].color}"></i>` : ''}${n}</button>`).join('')}</div>`;
   h += `<div class="plan" style="grid-template-columns:repeat(${b - a + 1},1fr)">`;
-  for (let c = a; c <= b; c++) h += `<div class="apron">${S.gates[c] ? `${c + 1}番 ${['', 'S', 'M', 'L'][S.gates[c]]}` : '−'}</div>`;
+  for (let c = a; c <= b; c++) h += `<div class="apron">${S.gates[c] ? `${c + 1}番 ${GATE_SHORT[S.gates[c]]}` : '−'}</div>`;
   for (let r = 0; r < TROWS; r++) for (let c = a; c <= b; c++) {
     const z = zoneAt(f, r, c), cell = cellAt(f, r, c), Zc = ZONES[z], idle = C.idle.has(nkey(f, r, c));
     let inner = '';
@@ -2050,6 +2109,13 @@ function openRunway() {
     h += `<h3>強化する</h3><div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">${ic('runway')}</div><div class="bd"><b>${nx.name}</b>${locked ? RANKS[nx.rank].name + 'で解放' : `${nx.desc}。1時間 ${nx.cap}回・維持費 ${yen(nx.up)}/日`}</div>
       <button class="btn price" data-act="runway" ${locked || S.money < nx.cost ? 'disabled' : ''}>${yen(nx.cost)}</button></div></div>`;
   } else h += `<p class="ok">最大の滑走路です</p>`;
+  const gl = S.gh || 0, gn = GH[gl + 1];
+  h += `<h3>地上支援（いまは${gl ? 'Lv' + gl : 'なし'}）</h3><p>給油・清掃・荷物の積み下ろしを早くして、飛行機がゲートにいる時間を短くします。同じゲートで1日に扱える便が増えます。</p>`;
+  if (gn) {
+    const locked = S.rank < gn.rank;
+    h += `<div class="list"><div class="row ${locked ? 'off' : ''}"><div class="ic">${ic('plane')}</div><div class="bd"><b>地上支援 Lv${gl + 1}</b>${locked ? RANKS[gn.rank].name + 'で解放' : `${gn.desc}。ゲートにいる時間 −${Math.round((1 - gn.mul) * 100)}%・維持費 ${yen(gn.up)}/日`}</div>
+      <button class="btn price" data-act="gh" ${locked || S.money < gn.cost ? 'disabled' : ''}>${yen(gn.cost)}</button></div></div>`;
+  } else h += `<p class="ok">最大の地上支援です</p>`;
   openSheet(h);
 }
 function openWing() {
@@ -2106,8 +2172,9 @@ function openGoal() {
     h += `<h3>次のランク：${nx.name}（1日の終わりに判定）</h3><table class="tbl">
       <tr><td>1日の旅客<small>前日の実績</small>${meter(paxNow / nx.pax)}</td><td>${num(paxNow)}<small>／${num(nx.pax)}人</small></td></tr>
       <tr><td>評判${meter(S.rep / nx.rep)}</td><td>${(S.rep / 20).toFixed(1)}<small>／${(nx.rep / 20).toFixed(1)} 以上</small></td></tr>
-      ${nx.need ? `<tr><td>${FAC[nx.need].name}がある</td><td>${cnt(nx.need) ? '<span class="ok">あり</span>' : '<span class="ng">なし</span>'}</td></tr>` : ''}</table>`;
-  } else h += `<p class="ok">最高ランクに到達しました</p>`;
+      ${nx.need ? `<tr><td>${nx.need.text}</td><td>${nx.need.ok() ? '<span class="ok">OK</span>' : '<span class="ng">まだ</span>'}</td></tr>` : ''}</table>`;
+    h += `<p class="muted">ランクは全部で${MAX_RANK}段階。いまは${S.rank}段目です。</p>`;
+  } else h += `<p class="ok">最高ランクに到達しました（${S.clearDay || S.day}日目）。このまま空港を育て続けられます。</p>`;
   h += `<h3>やること</h3><div class="list">`;
   for (const m of MISSIONS) {
     if (m.rank > S.rank) continue;
@@ -2145,7 +2212,8 @@ function openToday() {
 function openReport(rankUp) {
   const D = S.today, net = D.fees + D.shop + D.rent - D.upkeep;
   let h = `<h2>${S.day}日目のおわり</h2>`;
-  if (rankUp) h += `<div class="list" style="margin-top:12px"><div class="row"><div class="ic">${ic('trophy')}</div><div class="bd"><b>「${rankUp}」に昇格しました</b>新しい建物・ゲート・路線が使えるようになりました</div></div></div>`;
+  if (rankUp && S.rank === MAX_RANK) h += `<div class="list" style="margin-top:12px"><div class="row"><div class="ic">${ic('trophy')}</div><div class="bd"><b>「${rankUp}」になりました</b>${S.day}日目、のべ ${num(S.totals.pax)}人のお客さんを運びました。ここから先は、残りの目標と旅客の記録に挑めます</div></div></div>`;
+  else if (rankUp) h += `<div class="list" style="margin-top:12px"><div class="row"><div class="ic">${ic('trophy')}</div><div class="bd"><b>「${rankUp}」に昇格しました</b>新しい建物・ゲート・路線が使えるようになりました</div></div></div>`;
   h += `<div class="stat"><div><small>収支</small><b class="${net >= 0 ? 'ok' : 'ng'}">${net >= 0 ? '+' : ''}${yen(net)}</b></div><div><small>旅客</small><b>${num(D.pax)}<small>人</small></b></div></div>
     <h3>内わけ</h3><table class="tbl">
     <tr><td>着陸料</td><td>+${yen(D.fees)}</td></tr><tr><td>お店・駐車場</td><td>+${yen(D.shop)}</td></tr>
@@ -2185,7 +2253,7 @@ async function offlineStatus() {
 function openHelp() {
   S.seenHelp = true; save();
   openSheet(`${X}<h2>そらのみなと</h2>
-    <p class="lead">小さな地方空港を、世界とつながるハブ空港に育てましょう。</p>
+    <p class="lead">小さな地方空港を、世界一の空港に育てましょう。</p>
     <h3>2階建てのターミナル</h3>
     <p><b>2階（出発）</b>：高架道路の車寄せ → 一般エリアのチェックイン → 保安検査レーン → 出発エリア（お店）→ ゲート待合室 → 搭乗橋<br>
     <b>1階（到着）</b>：飛行機を降りた客はエスカレーターで1階へ → 到着エリアの手荷物受取場 → 一般エリア → 地上の車寄せ・駅・駐車場<br>
@@ -2242,7 +2310,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:' && !DEV) navig
 window.T = {
   get S() { return S; }, C: () => C, step(n = 60) { for (let i = 0; i < n && !S.dayOver; i++) stepMinute(); requestDraw(); updateHud(); },
   day() { while (!S.dayOver) stepMinute(); updateHud(); }, startDay, build, acceptOffer, upgradeGate, newGame, recalc,
-  api: { get C() { return C; }, FAC, colRange, zoneAt, cellAt, canBuildAt, isOpen, paintZone, WING_RANK, WING_COST, buildWing, buildSite, closeSheet },
+  api: { get C() { return C; }, FAC, colRange, zoneAt, cellAt, canBuildAt, isOpen, paintZone, WING_RANK, WING_COST, buildWing, buildSite, closeSheet, RUNWAY, GH, GATE_COST, GATE_RANK, upgradeRunway, upgradeGH, levelUp, LV_COST, dropContract },
 };
 </script>
 </body>
